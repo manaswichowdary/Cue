@@ -41,7 +41,7 @@ export default function App() {
     formData.append("file", file)
     setUploadingResume(true)
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/extract-resume", {
+      const res = await fetch("https://cue-production-b6e2.up.railway.app/api/extract-resume", {
         method: "POST",
         body: formData,
       })
@@ -77,7 +77,7 @@ export default function App() {
     setError(null)
     setSpeaker(null)
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/research", {
+      const res = await fetch("https://cue-production-b6e2.up.railway.app/api/research", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
