@@ -682,6 +682,22 @@ export default function App() {
                         })}
                       </div>
                     )}
+                    <div
+                      className="mt-6 pt-6 flex flex-col items-center"
+                      style={{ borderTop: `1px solid rgba(${patternColor}, 0.2)` }}
+                    >
+                      <div className="p-3 rounded-xl" style={{ background: palette.cream }}>
+                        <img
+                          src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https://cue-sepia-omega.vercel.app"
+                          alt="QR code linking to profile"
+                          width={120}
+                          height={120}
+                        />
+                      </div>
+                      <p className="text-xs mt-3" style={{ color: palette.indigo }}>
+                        Scan to save my profile
+                      </p>
+                    </div>
                   </div>
 
                   <div className="space-y-3">
