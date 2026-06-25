@@ -655,7 +655,7 @@ export default function App() {
                       {profileInitial}
                     </div>
                     <h2 className="text-xl font-bold" style={{ color: palette.mocha }}>
-                      {myProfile?.name || "Your name"}
+                      {myProfile?.name || "Your Name"}
                     </h2>
                     <p className="text-sm mt-1" style={{ color: palette.indigo }}>
                       {myProfile?.role || "Upload your resume to get started"}
