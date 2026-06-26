@@ -1,13 +1,23 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi.responses import HTMLResponse
 from models.schemas import SpeakerRequest, SpeakerResponse
-from services.claude import get_speaker_profile, extract_profile_from_resume
+from services.claude import (
+    get_speaker_profile,
+    extract_profile_from_resume,
+    generate_portfolio_html,
+)
 import pypdf
 import io
+import uuid
+import os
 
 # APIRouter is like a mini FastAPI app
 # We use it to group related endpoints together
 # Then we'll plug this router into the main app
 router = APIRouter()
+
+PORTFOLIO_DIR = "portfolios"
+os.makedirs(PORTFOLIO_DIR, exist_ok=True)
 
 @router.post("/research", response_model=SpeakerResponse)
 async def research_speaker(request: SpeakerRequest):
@@ -55,3 +65,32 @@ async def extract_resume(file: UploadFile = File(...)):
             status_code=500,
             detail=f"Error extracting resume: {str(e)}"
         )
+
+
+@router.post("/generate-portfolio")
+async def generate_portfolio(profile: dict):
+    """
+    POST /api/generate-portfolio
+    Takes extracted profile data, generates a portfolio HTML page, saves it with a unique ID, returns the ID.
+    """
+    try:
+        html = generate_portfolio_html(profile)
+        portfolio_id = str(uuid.uuid4())[:8]
+        with open(f"{PORTFOLIO_DIR}/{portfolio_id}.html", "w") as f:
+            f.write(html)
+        return {"portfolio_id": portfolio_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating portfolio: {str(e)}")
+
+
+@router.get("/portfolio/{portfolio_id}", response_class=HTMLResponse)
+async def get_portfolio(portfolio_id: str):
+    """
+    GET /api/portfolio/{portfolio_id}
+    Serves the generated portfolio HTML page directly.
+    """
+    try:
+        with open(f"{PORTFOLIO_DIR}/{portfolio_id}.html", "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
