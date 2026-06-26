@@ -191,20 +191,111 @@ def generate_portfolio_html(profile: dict) -> str:
     """
     name = html.escape((profile.get("name") or "Your Name").strip())
     role = html.escape((profile.get("role") or "").strip())
-    skills = html.escape((profile.get("skills_summary") or "").strip())
+    skills_summary = html.escape((profile.get("skills_summary") or "").strip())
+    email = (profile.get("email") or "").strip()
+    location = html.escape((profile.get("location") or "").strip())
     linkedin = (profile.get("linkedin") or "").strip()
     github = (profile.get("github") or "").strip()
     projects = profile.get("projects") or []
+    experience = profile.get("experience") or []
 
-    link_buttons = ""
-    if linkedin:
-        safe_linkedin = html.escape(linkedin, quote=True)
-        link_buttons += f'<a class="btn" href="{safe_linkedin}" target="_blank" rel="noopener noreferrer">LinkedIn</a>'
-    if github:
-        safe_github = html.escape(github, quote=True)
-        link_buttons += f'<a class="btn" href="{safe_github}" target="_blank" rel="noopener noreferrer">GitHub</a>'
+    def link_buttons(include_email: bool = False) -> str:
+        buttons = ""
+        if linkedin:
+            safe_linkedin = html.escape(linkedin, quote=True)
+            buttons += f'<a class="btn" href="{safe_linkedin}" target="_blank" rel="noopener noreferrer">LinkedIn</a>'
+        if github:
+            safe_github = html.escape(github, quote=True)
+            buttons += f'<a class="btn" href="{safe_github}" target="_blank" rel="noopener noreferrer">GitHub</a>'
+        if include_email and email:
+            safe_email = html.escape(email, quote=True)
+            buttons += f'<a class="btn" href="mailto:{safe_email}">Email</a>'
+        return f'<div class="links">{buttons}</div>' if buttons else ""
 
-    links_html = f'<div class="links">{link_buttons}</div>' if link_buttons else ""
+    contact_bits = []
+    if location:
+        contact_bits.append(f'<span class="contact-item">{location}</span>')
+    if email:
+        contact_bits.append(f'<span class="contact-item">{html.escape(email)}</span>')
+    contact_info_html = (
+        f'<div class="contact-info">{" · ".join(contact_bits)}</div>' if contact_bits else ""
+    )
+
+    about_html = (
+        f'<p class="about">{skills_summary}</p>' if skills_summary else ""
+    )
+
+    # Collect distinct technologies from projects and experience
+    skill_map: dict[str, str] = {}
+    for project in projects:
+        for tag in project.get("tech") or []:
+            label = str(tag).strip()
+            if label:
+                skill_map[label.lower()] = label
+    for entry in experience:
+        for tag in entry.get("tech") or []:
+            label = str(tag).strip()
+            if label:
+                skill_map[label.lower()] = label
+    for entry in experience:
+        for highlight in entry.get("highlights") or []:
+            for token in re.findall(r"[A-Za-z][A-Za-z0-9+#.]{1,24}", str(highlight)):
+                lower = token.lower()
+                if lower in skill_map:
+                    continue
+                if token[0].isupper() and lower not in {
+                    "i", "the", "a", "an", "and", "or", "to", "in", "on", "at", "for",
+                    "with", "by", "from", "as", "of", "was", "were", "been", "being",
+                    "built", "worked", "helped", "led", "using", "used", "developed",
+                }:
+                    skill_map[lower] = token
+
+    skill_tags = "".join(
+        f'<span class="tag">{html.escape(label)}</span>' for label in skill_map.values()
+    )
+    skills_section_html = ""
+    if skill_tags:
+        skills_section_html = f"""
+    <section class="section">
+      <h2 class="section-heading">Skills</h2>
+      <div class="tags">{skill_tags}</div>
+    </section>"""
+
+    experience_section_html = ""
+    if experience:
+        experience_cards = ""
+        for entry in experience:
+            title = html.escape((entry.get("title") or "").strip())
+            company = html.escape((entry.get("company") or "").strip())
+            duration = html.escape((entry.get("duration") or "").strip())
+            highlights = entry.get("highlights") or []
+            highlight_items = "".join(
+                f"<li>{html.escape(str(point).strip())}</li>"
+                for point in highlights
+                if str(point).strip()
+            )
+            highlights_html = (
+                f'<ul class="highlights">{highlight_items}</ul>' if highlight_items else ""
+            )
+            meta_parts = []
+            if company:
+                meta_parts.append(f'<span class="exp-company">{company}</span>')
+            if duration:
+                meta_parts.append(f'<span class="exp-duration">{duration}</span>')
+            meta_html = (
+                f'<div class="exp-meta">{" · ".join(meta_parts)}</div>' if meta_parts else ""
+            )
+            experience_cards += f"""
+        <article class="card exp-card">
+          <h3 class="exp-title">{title or "Role"}</h3>
+          {meta_html}
+          {highlights_html}
+        </article>"""
+        experience_section_html = f"""
+    <section class="section">
+      <h2 class="section-heading">Experience</h2>
+      {experience_cards}
+    </section>"""
 
     project_cards = ""
     for project in projects:
@@ -215,16 +306,31 @@ def generate_portfolio_html(profile: dict) -> str:
             tech_tags += f'<span class="tag">{html.escape(str(tag))}</span>'
         project_cards += f"""
         <article class="card">
-          <h2>{project_name}</h2>
+          <h3 class="card-title">{project_name}</h3>
           <p>{project_desc}</p>
           <div class="tags">{tech_tags}</div>
-        </article>
-        """
+        </article>"""
 
     if not project_cards:
         project_cards = '<p class="empty">No projects listed yet.</p>'
 
-    skills_html = f'<p class="skills">{skills}</p>' if skills else ""
+    projects_section_html = f"""
+    <section class="section">
+      <h2 class="section-heading">Projects</h2>
+      {project_cards}
+    </section>"""
+
+    contact_links = link_buttons(include_email=True)
+    contact_section_html = ""
+    if contact_links:
+        contact_section_html = f"""
+    <section class="section section-contact">
+      <h2 class="section-heading">Contact</h2>
+      <p class="contact-closing">Let&apos;s connect</p>
+      {contact_links}
+    </section>"""
+
+    hero_links = link_buttons(include_email=False)
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -243,44 +349,75 @@ def generate_portfolio_html(profile: dict) -> str:
       color: #2e2a3d;
       font-family: Georgia, "Times New Roman", serif;
       line-height: 1.6;
-      padding: 2rem 1rem 3rem;
+      padding: 2.5rem 1rem 3.5rem;
     }}
     .container {{
       max-width: 720px;
       margin: 0 auto;
     }}
-    header {{
+    .section {{
+      margin-top: 3rem;
+      padding-top: 2.5rem;
+      border-top: 1px solid rgba(170, 171, 202, 0.55);
+    }}
+    .section:first-of-type {{
+      margin-top: 0;
+      padding-top: 0;
+      border-top: none;
+    }}
+    .section-contact {{
       text-align: center;
-      margin-bottom: 2rem;
+      padding-bottom: 0.5rem;
+    }}
+    .hero {{
+      text-align: center;
+      padding-bottom: 0.5rem;
     }}
     h1 {{
       color: #a47864;
-      font-size: clamp(2rem, 6vw, 2.75rem);
+      font-size: clamp(2.25rem, 7vw, 3rem);
       font-weight: 700;
-      margin-bottom: 0.35rem;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.02em;
     }}
     .role {{
       color: #2e2a3d;
-      font-size: 1.05rem;
-      margin-bottom: 1rem;
+      font-size: 1.1rem;
+      margin-bottom: 1.5rem;
     }}
-    .skills {{
+    .about {{
+      font-size: 1rem;
+      max-width: 36rem;
+      margin: 0 auto 1.25rem;
+      opacity: 0.92;
+    }}
+    .contact-info {{
       font-size: 0.95rem;
-      margin-bottom: 1rem;
-      opacity: 0.9;
+      margin-bottom: 1.25rem;
+      opacity: 0.85;
+    }}
+    .contact-item {{
+      display: inline;
+    }}
+    .section-heading {{
+      color: #a47864;
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin-bottom: 1.25rem;
+      letter-spacing: 0.01em;
     }}
     .links {{
       display: flex;
       flex-wrap: wrap;
       gap: 0.75rem;
       justify-content: center;
-      margin-top: 0.5rem;
+      margin-top: 0.25rem;
     }}
     .btn {{
       background: #6c6c9b;
       color: #ffffff;
       text-decoration: none;
-      padding: 0.55rem 1.1rem;
+      padding: 0.55rem 1.15rem;
       border-radius: 999px;
       font-size: 0.9rem;
       font-weight: 600;
@@ -297,46 +434,76 @@ def generate_portfolio_html(profile: dict) -> str:
       margin-bottom: 1rem;
       box-shadow: 0 2px 8px rgba(46, 42, 61, 0.06);
     }}
-    .card h2 {{
+    .card:last-child {{
+      margin-bottom: 0;
+    }}
+    .card-title,
+    .exp-title {{
       color: #a47864;
-      font-size: 1.15rem;
+      font-size: 1.1rem;
       font-weight: 700;
-      margin-bottom: 0.5rem;
+      margin-bottom: 0.35rem;
+    }}
+    .exp-meta {{
+      font-size: 0.9rem;
+      margin-bottom: 0.75rem;
+      opacity: 0.85;
+    }}
+    .exp-company {{
+      font-weight: 600;
     }}
     .card p {{
       font-size: 0.95rem;
       margin-bottom: 0.75rem;
     }}
+    .highlights {{
+      margin-left: 1.15rem;
+      font-size: 0.92rem;
+    }}
+    .highlights li {{
+      margin-bottom: 0.35rem;
+    }}
+    .highlights li:last-child {{
+      margin-bottom: 0;
+    }}
     .tags {{
       display: flex;
       flex-wrap: wrap;
-      gap: 0.45rem;
+      gap: 0.5rem;
     }}
     .tag {{
       background: rgba(170, 171, 202, 0.25);
       color: #2e2a3d;
-      font-size: 0.75rem;
-      padding: 0.2rem 0.55rem;
+      font-size: 0.78rem;
+      padding: 0.25rem 0.65rem;
       border-radius: 999px;
     }}
     .empty {{
       text-align: center;
       opacity: 0.75;
-      padding: 1rem 0;
+      padding: 0.5rem 0;
+    }}
+    .contact-closing {{
+      font-size: 1.05rem;
+      margin-bottom: 1rem;
+      font-weight: 600;
+      color: #2e2a3d;
     }}
   </style>
 </head>
 <body>
   <div class="container">
-    <header>
+    <section class="section hero">
       <h1>{name}</h1>
       {f'<p class="role">{role}</p>' if role else ''}
-      {skills_html}
-      {links_html}
-    </header>
-    <main>
-      {project_cards}
-    </main>
+      {about_html}
+      {contact_info_html}
+      {hero_links}
+    </section>
+    {skills_section_html}
+    {experience_section_html}
+    {projects_section_html}
+    {contact_section_html}
   </div>
 </body>
 </html>"""
@@ -492,6 +659,19 @@ Return ONLY valid JSON with this exact structure, no markdown backticks, no expl
 {{
   "name": "full name",
   "role": "current role or status, e.g. CS student at ASU or Software Engineer at Company",
+  "email": "email address if visible in the resume, otherwise empty string",
+  "location": "city and state if visible, otherwise empty string",
+  "experience": [
+    {{
+      "title": "job title",
+      "company": "company name",
+      "duration": "Jun 2025 - Aug 2025",
+      "highlights": [
+        "short plain sentence about what they did",
+        "another short plain sentence in simple conversational language"
+      ]
+    }}
+  ],
   "projects": [
     {{
       "name": "project name",
@@ -503,6 +683,13 @@ Return ONLY valid JSON with this exact structure, no markdown backticks, no expl
   "linkedin": "full LinkedIn profile URL starting with https://, or empty string",
   "github": "full GitHub profile URL starting with https://github.com/username only (not a repo URL), or empty string"
 }}
+
+Rules for experience:
+- Extract up to 3 of the most recent or most significant work experience entries
+- Each entry must have title, company, duration, and highlights
+- Duration should look like "Jun 2025 - Aug 2025" or "Jan 2024 - Present"
+- highlights must be an array of 2 to 3 short plain sentence bullet points describing what they did
+- Write highlights in simple conversational language with no hyphens
 
 Rules for links:
 - Search the entire resume for contact info, headers, and footers
