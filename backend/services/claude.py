@@ -187,45 +187,46 @@ def get_speaker_profile(name: str, user_background: str = "") -> dict:
 
 def generate_portfolio_html(profile: dict) -> str:
     """
-    Build a self-contained portfolio HTML page from extracted resume profile data.
+    Build a self-contained portfolio website from extracted resume profile data.
+    Inspired by modern personal portfolio layouts with anchored sections and a hero landing.
     """
-    name = html.escape((profile.get("name") or "Your Name").strip())
+    raw_name = (profile.get("name") or "Your Name").strip()
+    name = html.escape(raw_name)
     role = html.escape((profile.get("role") or "").strip())
-    skills_summary = html.escape((profile.get("skills_summary") or "").strip())
+    skills_summary = (profile.get("skills_summary") or "").strip()
     email = (profile.get("email") or "").strip()
     location = html.escape((profile.get("location") or "").strip())
     linkedin = (profile.get("linkedin") or "").strip()
     github = (profile.get("github") or "").strip()
     projects = profile.get("projects") or []
     experience = profile.get("experience") or []
+    education = profile.get("education") or []
+    certifications = profile.get("certifications") or []
 
-    def link_buttons(include_email: bool = False) -> str:
-        buttons = ""
-        if linkedin:
-            safe_linkedin = html.escape(linkedin, quote=True)
-            buttons += f'<a class="btn" href="{safe_linkedin}" target="_blank" rel="noopener noreferrer">LinkedIn</a>'
-        if github:
-            safe_github = html.escape(github, quote=True)
-            buttons += f'<a class="btn" href="{safe_github}" target="_blank" rel="noopener noreferrer">GitHub</a>'
-        if include_email and email:
-            safe_email = html.escape(email, quote=True)
-            buttons += f'<a class="btn" href="mailto:{safe_email}">Email</a>'
-        return f'<div class="links">{buttons}</div>' if buttons else ""
+    name_parts = raw_name.split()
+    display_name = name
+    if len(name_parts) >= 2:
+        display_name = (
+            f'<span class="name-accent">{html.escape(name_parts[0])}</span> '
+            f"{html.escape(' '.join(name_parts[1:]))}"
+        )
 
-    contact_bits = []
-    if location:
-        contact_bits.append(f'<span class="contact-item">{location}</span>')
-    if email:
-        contact_bits.append(f'<span class="contact-item">{html.escape(email)}</span>')
-    contact_info_html = (
-        f'<div class="contact-info">{" · ".join(contact_bits)}</div>' if contact_bits else ""
+    initials = html.escape(raw_name[:1].upper() if raw_name else "?")
+    tagline = html.escape(skills_summary) if skills_summary else (
+        "Building thoughtful work, one project at a time." if not role
+        else f"Focused on {html.escape(role.lower())} and meaningful impact."
+    )
+    about_body = html.escape(skills_summary) if skills_summary else (
+        "A short professional summary will appear here once your resume is processed. "
+        "Upload a resume with an about section or skills summary to personalize this page."
     )
 
-    about_html = (
-        f'<p class="about">{skills_summary}</p>' if skills_summary else ""
-    )
+    def btn(href: str, label: str, external: bool = False) -> str:
+        safe_href = html.escape(href, quote=True)
+        extra = ' target="_blank" rel="noopener noreferrer"' if external else ""
+        return f'<a class="btn" href="{safe_href}"{extra}>{html.escape(label)}</a>'
 
-    # Collect distinct technologies from projects and experience
+    # Collect distinct skills from projects and experience
     skill_map: dict[str, str] = {}
     for project in projects:
         for tag in project.get("tech") or []:
@@ -237,35 +238,105 @@ def generate_portfolio_html(profile: dict) -> str:
             label = str(tag).strip()
             if label:
                 skill_map[label.lower()] = label
-    for entry in experience:
-        for highlight in entry.get("highlights") or []:
-            for token in re.findall(r"[A-Za-z][A-Za-z0-9+#.]{1,24}", str(highlight)):
-                lower = token.lower()
-                if lower in skill_map:
-                    continue
-                if token[0].isupper() and lower not in {
-                    "i", "the", "a", "an", "and", "or", "to", "in", "on", "at", "for",
-                    "with", "by", "from", "as", "of", "was", "were", "been", "being",
-                    "built", "worked", "helped", "led", "using", "used", "developed",
-                }:
-                    skill_map[lower] = token
 
-    skill_tags = "".join(
-        f'<span class="tag">{html.escape(label)}</span>' for label in skill_map.values()
+    has_skills = bool(skill_map)
+    has_experience = bool(experience)
+    has_projects = bool(projects)
+    has_education = bool(education)
+    has_certs = bool(certifications)
+
+    nav_items: list[tuple[str, str]] = [("about", "About")]
+    if has_skills:
+        nav_items.append(("skills", "Skills"))
+    nav_items.append(("projects", "Projects"))
+    if has_certs:
+        nav_items.append(("certifications", "Certs"))
+    if has_experience:
+        nav_items.append(("experience", "Experience"))
+    if has_education:
+        nav_items.append(("education", "Education"))
+    nav_items.append(("contact", "Contact"))
+
+    nav_html = "".join(
+        f'<a href="#{section_id}">{label}</a>' for section_id, label in nav_items
     )
-    skills_section_html = ""
-    if skill_tags:
-        skills_section_html = f"""
-    <section class="section">
-      <h2 class="section-heading">Skills</h2>
-      <div class="tags">{skill_tags}</div>
+
+    hero_ctas = '<a class="btn btn-primary" href="#projects">View My Work</a>'
+    hero_ctas += '<a class="btn btn-outline" href="#contact">Get In Touch</a>'
+
+    about_meta = ""
+    meta_bits = []
+    if location:
+        meta_bits.append(f'<span class="meta-pill">{location}</span>')
+    if email:
+        meta_bits.append(f'<span class="meta-pill">{html.escape(email)}</span>')
+    if role:
+        meta_bits.append(f'<span class="meta-pill">{role}</span>')
+    if meta_bits:
+        about_meta = f'<div class="meta-row">{"".join(meta_bits)}</div>'
+
+    section_num = 1
+
+    def section_header(title: str, subtitle: str = "") -> str:
+        nonlocal section_num
+        num = f"{section_num:02d}"
+        section_num += 1
+        sub = f'<p class="section-sub">{subtitle}</p>' if subtitle else ""
+        return f"""
+      <div class="section-head">
+        <span class="section-num">{num}</span>
+        <h2 class="section-title">{title}</h2>
+        {sub}
+      </div>"""
+
+    about_header = section_header("About Me", "A quick introduction")
+
+    skills_section = ""
+    if has_skills:
+        skill_tags = "".join(
+            f'<span class="tag">{html.escape(label)}</span>'
+            for label in skill_map.values()
+        )
+        skills_section = f"""
+    <section id="skills" class="panel">
+      {section_header("Skills &amp; Expertise", "Technologies and tools from your resume")}
+      <div class="skill-cloud">{skill_tags}</div>
     </section>"""
 
-    experience_section_html = ""
-    if experience:
-        experience_cards = ""
+    projects_section = ""
+    if has_projects:
+        project_cards = ""
+        for idx, project in enumerate(projects, start=1):
+            project_name = html.escape((project.get("name") or "Project").strip())
+            project_desc = html.escape((project.get("desc") or "").strip())
+            tech_tags = "".join(
+                f'<span class="tag">{html.escape(str(tag))}</span>'
+                for tag in (project.get("tech") or [])
+            )
+            project_cards += f"""
+        <article class="project-card">
+          <div class="project-index">Project · {idx:03d}</div>
+          <h3>{project_name}</h3>
+          <p>{project_desc}</p>
+          <div class="tags">{tech_tags}</div>
+        </article>"""
+        projects_section = f"""
+    <section id="projects" class="panel">
+      {section_header("Featured Projects", "Selected work from your resume")}
+      <div class="project-grid">{project_cards}</div>
+    </section>"""
+    else:
+        projects_section = f"""
+    <section id="projects" class="panel">
+      {section_header("Featured Projects")}
+      <p class="placeholder">Project highlights will appear here when they are listed on your resume.</p>
+    </section>"""
+
+    experience_section = ""
+    if has_experience:
+        exp_items = ""
         for entry in experience:
-            title = html.escape((entry.get("title") or "").strip())
+            title = html.escape((entry.get("title") or "Role").strip())
             company = html.escape((entry.get("company") or "").strip())
             duration = html.escape((entry.get("duration") or "").strip())
             highlights = entry.get("highlights") or []
@@ -275,62 +346,111 @@ def generate_portfolio_html(profile: dict) -> str:
                 if str(point).strip()
             )
             highlights_html = (
-                f'<ul class="highlights">{highlight_items}</ul>' if highlight_items else ""
+                f"<ul>{highlight_items}</ul>" if highlight_items else ""
             )
-            meta_parts = []
-            if company:
-                meta_parts.append(f'<span class="exp-company">{company}</span>')
-            if duration:
-                meta_parts.append(f'<span class="exp-duration">{duration}</span>')
-            meta_html = (
-                f'<div class="exp-meta">{" · ".join(meta_parts)}</div>' if meta_parts else ""
-            )
-            experience_cards += f"""
-        <article class="card exp-card">
-          <h3 class="exp-title">{title or "Role"}</h3>
-          {meta_html}
-          {highlights_html}
+            company_line = f" · {company}" if company else ""
+            exp_items += f"""
+        <article class="timeline-item">
+          <div class="timeline-when">{duration or "Present"}</div>
+          <div class="timeline-body">
+            <h3>{title}<span class="timeline-org">{company_line}</span></h3>
+            {highlights_html}
+          </div>
         </article>"""
-        experience_section_html = f"""
-    <section class="section">
-      <h2 class="section-heading">Experience</h2>
-      {experience_cards}
+        experience_section = f"""
+    <section id="experience" class="panel">
+      {section_header("Work Experience", "Recent roles and impact")}
+      <div class="timeline">{exp_items}</div>
     </section>"""
 
-    project_cards = ""
-    for project in projects:
-        project_name = html.escape((project.get("name") or "Project").strip())
-        project_desc = html.escape((project.get("desc") or "").strip())
-        tech_tags = ""
-        for tag in project.get("tech") or []:
-            tech_tags += f'<span class="tag">{html.escape(str(tag))}</span>'
-        project_cards += f"""
-        <article class="card">
-          <h3 class="card-title">{project_name}</h3>
-          <p>{project_desc}</p>
-          <div class="tags">{tech_tags}</div>
+    certs_section = ""
+    if has_certs:
+        cert_cards = ""
+        for cert in certifications:
+            if isinstance(cert, str):
+                cert_name = html.escape(cert.strip())
+                cert_detail = ""
+            else:
+                cert_name = html.escape((cert.get("name") or cert.get("title") or "Certification").strip())
+                cert_detail = html.escape((cert.get("issuer") or cert.get("org") or "").strip())
+            detail_html = f"<p>{cert_detail}</p>" if cert_detail else ""
+            cert_cards += f"""
+        <article class="info-card">
+          <h3>{cert_name}</h3>
+          {detail_html}
         </article>"""
-
-    if not project_cards:
-        project_cards = '<p class="empty">No projects listed yet.</p>'
-
-    projects_section_html = f"""
-    <section class="section">
-      <h2 class="section-heading">Projects</h2>
-      {project_cards}
+        certs_section = f"""
+    <section id="certifications" class="panel">
+      {section_header("Certifications")}
+      <div class="info-grid">{cert_cards}</div>
     </section>"""
 
-    contact_links = link_buttons(include_email=True)
-    contact_section_html = ""
-    if contact_links:
-        contact_section_html = f"""
-    <section class="section section-contact">
-      <h2 class="section-heading">Contact</h2>
-      <p class="contact-closing">Let&apos;s connect</p>
-      {contact_links}
+    education_section = ""
+    if has_education:
+        edu_cards = ""
+        for edu in education:
+            if isinstance(edu, str):
+                edu_title = html.escape(edu.strip())
+                edu_sub = ""
+            else:
+                edu_title = html.escape((edu.get("degree") or edu.get("school") or "Education").strip())
+                school = html.escape((edu.get("school") or "").strip())
+                years = html.escape((edu.get("years") or edu.get("duration") or "").strip())
+                edu_sub = " · ".join(x for x in [school, years] if x)
+            sub_html = f"<p>{edu_sub}</p>" if edu_sub else ""
+            edu_cards += f"""
+        <article class="info-card">
+          <h3>{edu_title}</h3>
+          {sub_html}
+        </article>"""
+        education_section = f"""
+    <section id="education" class="panel">
+      {section_header("Education")}
+      <div class="info-grid">{edu_cards}</div>
     </section>"""
 
-    hero_links = link_buttons(include_email=False)
+    contact_cards = ""
+    if email:
+        safe_email = html.escape(email, quote=True)
+        contact_cards += f"""
+        <div class="contact-card">
+          <span class="contact-label">Email</span>
+          <a href="mailto:{safe_email}">{html.escape(email)}</a>
+        </div>"""
+    if location:
+        contact_cards += f"""
+        <div class="contact-card">
+          <span class="contact-label">Location</span>
+          <span>{location}</span>
+        </div>"""
+    if linkedin:
+        safe_linkedin = html.escape(linkedin, quote=True)
+        contact_cards += f"""
+        <div class="contact-card">
+          <span class="contact-label">LinkedIn</span>
+          <a href="{safe_linkedin}" target="_blank" rel="noopener noreferrer">View profile</a>
+        </div>"""
+    if github:
+        safe_github = html.escape(github, quote=True)
+        contact_cards += f"""
+        <div class="contact-card">
+          <span class="contact-label">GitHub</span>
+          <a href="{safe_github}" target="_blank" rel="noopener noreferrer">View profile</a>
+        </div>"""
+
+    contact_actions = ""
+    if email:
+        contact_actions += btn(f"mailto:{email}", "Say Hello")
+    elif linkedin:
+        contact_actions += btn(linkedin, "Say Hello", external=True)
+    elif github:
+        contact_actions += btn(github, "Say Hello", external=True)
+
+    contact_body = (
+        contact_cards
+        if contact_cards
+        else '<p class="placeholder">Add email, LinkedIn, or GitHub to your resume to populate contact details.</p>'
+    )
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -344,167 +464,400 @@ def generate_portfolio_html(profile: dict) -> str:
       margin: 0;
       padding: 0;
     }}
+    html {{
+      scroll-behavior: smooth;
+      scroll-padding-top: 4.5rem;
+    }}
     body {{
       background: #f0ece6;
       color: #2e2a3d;
       font-family: Georgia, "Times New Roman", serif;
-      line-height: 1.6;
-      padding: 2.5rem 1rem 3.5rem;
+      line-height: 1.65;
     }}
-    .container {{
-      max-width: 720px;
-      margin: 0 auto;
+    a {{
+      color: #4f4d84;
     }}
-    .section {{
-      margin-top: 3rem;
-      padding-top: 2.5rem;
-      border-top: 1px solid rgba(170, 171, 202, 0.55);
+    .site-nav {{
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.85rem 1.25rem;
+      background: rgba(240, 236, 230, 0.92);
+      border-bottom: 1px solid rgba(170, 171, 202, 0.65);
+      backdrop-filter: blur(8px);
     }}
-    .section:first-of-type {{
-      margin-top: 0;
-      padding-top: 0;
-      border-top: none;
+    .brand {{
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      text-decoration: none;
+      color: #2e2a3d;
+      font-weight: 700;
+      white-space: nowrap;
     }}
-    .section-contact {{
-      text-align: center;
-      padding-bottom: 0.5rem;
+    .brand-mark {{
+      width: 2rem;
+      height: 2rem;
+      border-radius: 999px;
+      background: #6c6c9b;
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-size: 0.85rem;
+      font-weight: 700;
+    }}
+    .nav-links {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem 1rem;
+      justify-content: flex-end;
+    }}
+    .nav-links a {{
+      text-decoration: none;
+      color: #4f4d84;
+      font-size: 0.88rem;
+      font-weight: 600;
+    }}
+    .nav-links a:hover {{
+      color: #a47864;
     }}
     .hero {{
+      min-height: calc(100vh - 4.5rem);
+      display: grid;
+      place-items: center;
+      padding: 3rem 1.25rem 4rem;
       text-align: center;
-      padding-bottom: 0.5rem;
+      background:
+        radial-gradient(circle at top right, rgba(170, 171, 202, 0.22), transparent 42%),
+        radial-gradient(circle at bottom left, rgba(164, 120, 100, 0.14), transparent 38%),
+        #f0ece6;
     }}
-    h1 {{
-      color: #a47864;
-      font-size: clamp(2.25rem, 7vw, 3rem);
+    .hero-inner {{
+      max-width: 46rem;
+    }}
+    .eyebrow {{
+      color: #6c6c9b;
+      font-size: 0.95rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 1rem;
       font-weight: 700;
-      margin-bottom: 0.5rem;
-      letter-spacing: -0.02em;
     }}
-    .role {{
+    .hero h1 {{
+      color: #a47864;
+      font-size: clamp(2.5rem, 8vw, 4.5rem);
+      line-height: 1.05;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      letter-spacing: -0.03em;
+    }}
+    .name-accent {{
+      text-decoration: underline;
+      text-decoration-color: rgba(164, 120, 100, 0.45);
+      text-underline-offset: 0.18em;
+    }}
+    .hero-tagline {{
+      font-size: clamp(1.05rem, 2.5vw, 1.35rem);
+      max-width: 38rem;
+      margin: 0 auto 1.75rem;
       color: #2e2a3d;
-      font-size: 1.1rem;
-      margin-bottom: 1.5rem;
-    }}
-    .about {{
-      font-size: 1rem;
-      max-width: 36rem;
-      margin: 0 auto 1.25rem;
       opacity: 0.92;
     }}
-    .contact-info {{
-      font-size: 0.95rem;
-      margin-bottom: 1.25rem;
-      opacity: 0.85;
-    }}
-    .contact-item {{
-      display: inline;
-    }}
-    .section-heading {{
-      color: #a47864;
-      font-size: 1.35rem;
-      font-weight: 700;
-      margin-bottom: 1.25rem;
-      letter-spacing: 0.01em;
-    }}
-    .links {{
+    .hero-actions {{
       display: flex;
       flex-wrap: wrap;
       gap: 0.75rem;
       justify-content: center;
-      margin-top: 0.25rem;
     }}
-    .btn {{
-      background: #6c6c9b;
-      color: #ffffff;
-      text-decoration: none;
-      padding: 0.55rem 1.15rem;
-      border-radius: 999px;
-      font-size: 0.9rem;
-      font-weight: 600;
+    .page-wrap {{
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 0 1.25rem 4rem;
+    }}
+    .panel {{
+      padding: 4.5rem 0 0;
+      border-top: 1px solid rgba(170, 171, 202, 0.45);
+    }}
+    .panel:first-of-type {{
+      border-top: none;
+      padding-top: 3rem;
+    }}
+    .section-head {{
+      margin-bottom: 2rem;
+    }}
+    .section-num {{
       display: inline-block;
+      color: #6c6c9b;
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      margin-bottom: 0.5rem;
     }}
-    .btn:hover {{
-      background: #4f4d84;
-    }}
-    .card {{
-      background: #ffffff;
-      border: 1px solid #aaabca;
-      border-radius: 1rem;
-      padding: 1.25rem 1.35rem;
-      margin-bottom: 1rem;
-      box-shadow: 0 2px 8px rgba(46, 42, 61, 0.06);
-    }}
-    .card:last-child {{
-      margin-bottom: 0;
-    }}
-    .card-title,
-    .exp-title {{
+    .section-title {{
       color: #a47864;
-      font-size: 1.1rem;
+      font-size: clamp(1.6rem, 4vw, 2.2rem);
       font-weight: 700;
       margin-bottom: 0.35rem;
     }}
-    .exp-meta {{
-      font-size: 0.9rem;
-      margin-bottom: 0.75rem;
-      opacity: 0.85;
+    .section-sub {{
+      color: #4f4d84;
+      font-size: 0.98rem;
+      opacity: 0.9;
     }}
-    .exp-company {{
-      font-weight: 600;
+    .about-copy {{
+      font-size: 1.05rem;
+      max-width: 42rem;
+      margin-bottom: 1.5rem;
     }}
-    .card p {{
-      font-size: 0.95rem;
-      margin-bottom: 0.75rem;
+    .meta-row {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem;
     }}
-    .highlights {{
-      margin-left: 1.15rem;
-      font-size: 0.92rem;
+    .meta-pill {{
+      background: #ffffff;
+      border: 1px solid #aaabca;
+      border-radius: 999px;
+      padding: 0.35rem 0.8rem;
+      font-size: 0.82rem;
+      color: #2e2a3d;
     }}
-    .highlights li {{
-      margin-bottom: 0.35rem;
-    }}
-    .highlights li:last-child {{
-      margin-bottom: 0;
-    }}
+    .skill-cloud,
     .tags {{
       display: flex;
       flex-wrap: wrap;
-      gap: 0.5rem;
+      gap: 0.55rem;
     }}
     .tag {{
       background: rgba(170, 171, 202, 0.25);
       color: #2e2a3d;
-      font-size: 0.78rem;
-      padding: 0.25rem 0.65rem;
+      font-size: 0.8rem;
+      padding: 0.35rem 0.75rem;
       border-radius: 999px;
+      border: 1px solid rgba(170, 171, 202, 0.45);
     }}
-    .empty {{
-      text-align: center;
-      opacity: 0.75;
-      padding: 0.5rem 0;
+    .project-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1rem;
     }}
-    .contact-closing {{
-      font-size: 1.05rem;
-      margin-bottom: 1rem;
-      font-weight: 600;
+    .project-card,
+    .info-card {{
+      background: #ffffff;
+      border: 1px solid #aaabca;
+      border-radius: 1rem;
+      padding: 1.35rem;
+      box-shadow: 0 8px 24px rgba(46, 42, 61, 0.05);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }}
+    .project-card:hover {{
+      transform: translateY(-2px);
+      box-shadow: 0 12px 28px rgba(46, 42, 61, 0.08);
+    }}
+    .project-index {{
+      color: #6c6c9b;
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 0.65rem;
+      font-weight: 700;
+    }}
+    .project-card h3,
+    .info-card h3,
+    .timeline-body h3 {{
+      color: #a47864;
+      font-size: 1.08rem;
+      margin-bottom: 0.55rem;
+      font-weight: 700;
+    }}
+    .project-card p,
+    .info-card p {{
+      font-size: 0.95rem;
+      margin-bottom: 0.85rem;
+    }}
+    .timeline {{
+      display: grid;
+      gap: 1rem;
+    }}
+    .timeline-item {{
+      display: grid;
+      grid-template-columns: minmax(7.5rem, 10rem) 1fr;
+      gap: 1rem;
+      background: #ffffff;
+      border: 1px solid #aaabca;
+      border-radius: 1rem;
+      padding: 1.25rem 1.35rem;
+      box-shadow: 0 6px 18px rgba(46, 42, 61, 0.04);
+    }}
+    .timeline-when {{
+      color: #6c6c9b;
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      padding-top: 0.15rem;
+    }}
+    .timeline-org {{
       color: #2e2a3d;
+      font-weight: 600;
+      opacity: 0.85;
+    }}
+    .timeline-body ul {{
+      margin-left: 1.1rem;
+      font-size: 0.93rem;
+    }}
+    .timeline-body li {{
+      margin-bottom: 0.35rem;
+    }}
+    .info-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+    }}
+    .contact-panel {{
+      text-align: center;
+      padding-bottom: 1rem;
+    }}
+    .contact-panel .section-head {{
+      text-align: center;
+    }}
+    .contact-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.85rem;
+      margin: 1.5rem auto 1.75rem;
+      max-width: 42rem;
+      text-align: left;
+    }}
+    .contact-card {{
+      background: #ffffff;
+      border: 1px solid #aaabca;
+      border-radius: 0.9rem;
+      padding: 1rem 1.1rem;
+    }}
+    .contact-label {{
+      display: block;
+      color: #6c6c9b;
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 0.35rem;
+      font-weight: 700;
+    }}
+    .contact-card a {{
+      color: #2e2a3d;
+      text-decoration: none;
+      font-weight: 600;
+    }}
+    .contact-card a:hover {{
+      color: #a47864;
+    }}
+    .contact-actions {{
+      display: flex;
+      justify-content: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }}
+    .btn {{
+      display: inline-block;
+      text-decoration: none;
+      padding: 0.65rem 1.2rem;
+      border-radius: 999px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+    }}
+    .btn-primary {{
+      background: #6c6c9b;
+      color: #ffffff;
+      border: 1px solid #6c6c9b;
+    }}
+    .btn-primary:hover {{
+      background: #4f4d84;
+      border-color: #4f4d84;
+    }}
+    .btn-outline {{
+      background: transparent;
+      color: #4f4d84;
+      border: 1px solid #aaabca;
+    }}
+    .btn-outline:hover {{
+      background: #ffffff;
+      color: #a47864;
+      border-color: #a47864;
+    }}
+    .placeholder {{
+      opacity: 0.75;
+      font-style: italic;
+      max-width: 36rem;
+    }}
+    .site-footer {{
+      border-top: 1px solid rgba(170, 171, 202, 0.45);
+      padding: 1.5rem 1.25rem 2rem;
+      text-align: center;
+      color: #4f4d84;
+      font-size: 0.85rem;
+    }}
+    @media (max-width: 720px) {{
+      .site-nav {{
+        flex-direction: column;
+        align-items: flex-start;
+      }}
+      .nav-links {{
+        justify-content: flex-start;
+      }}
+      .timeline-item {{
+        grid-template-columns: 1fr;
+      }}
+      .hero {{
+        min-height: auto;
+        padding-top: 2.5rem;
+      }}
     }}
   </style>
 </head>
 <body>
-  <div class="container">
-    <section class="section hero">
-      <h1>{name}</h1>
-      {f'<p class="role">{role}</p>' if role else ''}
-      {about_html}
-      {contact_info_html}
-      {hero_links}
+  <nav class="site-nav">
+    <a class="brand" href="#top">
+      <span class="brand-mark">{initials}</span>
+      <span>{name}</span>
+    </a>
+    <div class="nav-links">{nav_html}</div>
+  </nav>
+
+  <header id="top" class="hero">
+    <div class="hero-inner">
+      {f'<p class="eyebrow">{role}</p>' if role else '<p class="eyebrow">Portfolio</p>'}
+      <h1>{display_name}</h1>
+      <p class="hero-tagline">{tagline}</p>
+      <div class="hero-actions">{hero_ctas}</div>
+    </div>
+  </header>
+
+  <main class="page-wrap">
+    <section id="about" class="panel">
+      {about_header}
+      <p class="about-copy">{about_body}</p>
+      {about_meta}
     </section>
-    {skills_section_html}
-    {experience_section_html}
-    {projects_section_html}
-    {contact_section_html}
-  </div>
+    {skills_section}
+    {projects_section}
+    {certs_section}
+    {experience_section}
+    {education_section}
+    <section id="contact" class="panel contact-panel">
+      {section_header("Let&apos;s Connect", "Open to conversations, collaborations, and new opportunities")}
+      <div class="contact-grid">{contact_body}</div>
+      <div class="contact-actions">{contact_actions}</div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>&copy; 2026 {name}. Built with Cue.</p>
+  </footer>
 </body>
 </html>"""
 
