@@ -1,4 +1,4 @@
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import PlexusBackground from "./PlexusBackground"
 
 function normalizeGithubUrl(value) {
@@ -18,6 +18,220 @@ function normalizeLinkedinUrl(value) {
   return `https://linkedin.com/in/${match[1]}`
 }
 
+const themes = [
+  {
+    name: "Cue Default",
+    background: "#f0ece6",
+    heading_color: "#a47864",
+    card_bg: "#ffffff",
+    card_border: "#aaabca",
+    body_text: "#2e2a3d",
+    button_bg: "#6c6c9b",
+    button_text: "#ffffff",
+  },
+  {
+    name: "Rustic Charm",
+    background: "#f5f0e8",
+    heading_color: "#1a1a1a",
+    card_bg: "#e8e4de",
+    card_border: "#3d3d3d",
+    body_text: "#3d3d3d",
+    button_bg: "#c45c26",
+    button_text: "#ffffff",
+  },
+  {
+    name: "Ocean Blue Serenity",
+    background: "#faf8f5",
+    heading_color: "#5a6a7a",
+    card_bg: "#d4eaf7",
+    card_border: "#b8e0d2",
+    body_text: "#5a6a7a",
+    button_bg: "#e8b4a0",
+    button_text: "#ffffff",
+  },
+  {
+    name: "Oceanic Cactus",
+    background: "#f0faf8",
+    heading_color: "#006d77",
+    card_bg: "#83c5be",
+    card_border: "#f4e285",
+    body_text: "#006d77",
+    button_bg: "#e29578",
+    button_text: "#ffffff",
+  },
+  {
+    name: "Pastel Comfort",
+    background: "#fdf8f0",
+    heading_color: "#9c4a2e",
+    card_bg: "#e8f5e9",
+    card_border: "#c5e1a5",
+    body_text: "#9c4a2e",
+    button_bg: "#f4c4a8",
+    button_text: "#ffffff",
+  },
+  {
+    name: "Sunny Beach Day",
+    background: "#fefae0",
+    heading_color: "#001d3d",
+    card_bg: "#2a6f7a",
+    card_border: "#3d2314",
+    body_text: "#3d2314",
+    button_bg: "#ff6b35",
+    button_text: "#ffffff",
+  },
+  {
+    name: "Earthy Tones",
+    background: "#faf8f5",
+    heading_color: "#2e2e2e",
+    card_bg: "#e8e0d5",
+    card_border: "#8a9a7b",
+    body_text: "#2e2e2e",
+    button_bg: "#c9a0a0",
+    button_text: "#ffffff",
+  },
+  {
+    name: "Ocean Breeze",
+    background: "#caf0f8",
+    heading_color: "#03045e",
+    card_bg: "#ffffff",
+    card_border: "#0077b6",
+    body_text: "#023e8a",
+    button_bg: "#00b4d8",
+    button_text: "#ffffff",
+  },
+  {
+    name: "Warm Neutrals",
+    background: "#fdf6f0",
+    heading_color: "#c89f81",
+    card_bg: "#ffffff",
+    card_border: "#e1c6b1",
+    body_text: "#a6a28e",
+    button_bg: "#c89f81",
+    button_text: "#ffffff",
+  },
+  {
+    name: "Earthy Green",
+    background: "#ced4da",
+    heading_color: "#2d3a3a",
+    card_bg: "#ffffff",
+    card_border: "#82a68a",
+    body_text: "#3c4e4b",
+    button_bg: "#4a6d5a",
+    button_text: "#ffffff",
+  },
+  {
+    name: "Dark Sunset",
+    background: "#fefae0",
+    heading_color: "#2f3e46",
+    card_bg: "#ffffff",
+    card_border: "#dda15e",
+    body_text: "#2f3e46",
+    button_bg: "#bc6c25",
+    button_text: "#ffffff",
+  },
+  {
+    name: "Gradient Blues",
+    background: "#e0fbfc",
+    heading_color: "#3d5a80",
+    card_bg: "#ffffff",
+    card_border: "#98c1d9",
+    body_text: "#293241",
+    button_bg: "#3d5a80",
+    button_text: "#ffffff",
+  },
+  {
+    name: "Golden Twilight",
+    background: "#000814",
+    heading_color: "#ffc300",
+    card_bg: "#001d3d",
+    card_border: "#003566",
+    body_text: "#ffd60a",
+    button_bg: "#ffc300",
+    button_text: "#000814",
+  },
+  {
+    name: "Summer Dream",
+    background: "#fefae0",
+    heading_color: "#006d77",
+    card_bg: "#ffffff",
+    card_border: "#83c5be",
+    body_text: "#006d77",
+    button_bg: "#e29578",
+    button_text: "#ffffff",
+  },
+  {
+    name: "Coastal Vibes",
+    background: "#edf2f4",
+    heading_color: "#2b2d42",
+    card_bg: "#ffffff",
+    card_border: "#8d99ae",
+    body_text: "#2b2d42",
+    button_bg: "#ef233c",
+    button_text: "#ffffff",
+  },
+  {
+    name: "Fiery Palette",
+    background: "#fdfcf0",
+    heading_color: "#4d001d",
+    card_bg: "#ffffff",
+    card_border: "#ff4d00",
+    body_text: "#4d001d",
+    button_bg: "#900c3f",
+    button_text: "#ffffff",
+  },
+  {
+    name: "Neon Dark",
+    background: "#0d0d0d",
+    heading_color: "#39ff14",
+    card_bg: "#1a1a1a",
+    card_border: "#bc13fe",
+    body_text: "#ffffff",
+    button_bg: "#39ff14",
+    button_text: "#000000",
+  },
+]
+
+const fonts = [
+  { name: "Georgia", value: 'Georgia, "Times New Roman", serif' },
+  { name: "Times New Roman", value: '"Times New Roman", Times, serif' },
+  { name: "Arial", value: "Arial, Helvetica, sans-serif" },
+  { name: "Helvetica", value: "Helvetica, Arial, sans-serif" },
+  { name: "Courier New", value: '"Courier New", Courier, monospace' },
+  { name: "Palatino", value: 'Palatino, "Palatino Linotype", serif' },
+  { name: "Garamond", value: 'Garamond, "Times New Roman", serif' },
+  { name: "Verdana", value: "Verdana, Geneva, sans-serif" },
+  { name: "Trebuchet MS", value: '"Trebuchet MS", Helvetica, sans-serif' },
+  { name: "Lucida Sans", value: '"Lucida Sans", "Lucida Grande", sans-serif' },
+]
+
+function themeColors(theme) {
+  if (!theme) return null
+  return {
+    background: theme.background,
+    heading_color: theme.heading_color,
+    card_bg: theme.card_bg,
+    card_border: theme.card_border,
+    body_text: theme.body_text,
+    button_bg: theme.button_bg,
+    button_text: theme.button_text,
+  }
+}
+
+function qrHex(color) {
+  return (color || "#2e2a3d").replace("#", "")
+}
+
+function portfolioQrSrc(portfolioUrl, theme) {
+  const activeTheme = theme || themes.find((t) => t.name === "Cue Default")
+  const params = new URLSearchParams({
+    size: "120x120",
+    data: portfolioUrl,
+    color: qrHex(activeTheme?.button_bg),
+    bgcolor: qrHex(activeTheme?.background),
+  })
+  return `https://api.qrserver.com/v1/create-qr-code/?${params.toString()}`
+}
+
 export default function App() {
   const [name, setName] = useState("")
   const [loading, setLoading] = useState(false)
@@ -28,7 +242,73 @@ export default function App() {
   const [myProfile, setMyProfile] = useState(null)
   const [uploadingResume, setUploadingResume] = useState(false)
   const [resumeUrl, setResumeUrl] = useState(null)
+  const [portfolioUrl, setPortfolioUrl] = useState(null)
+  const [selectedTheme, setSelectedTheme] = useState(null)
+  const [selectedFont, setSelectedFont] = useState(null)
+  const [regeneratingPortfolio, setRegeneratingPortfolio] = useState(false)
   const resumeInputRef = useRef(null)
+  const hasPortfolioRef = useRef(false)
+
+  const apiBase = "https://cue-production-b6e2.up.railway.app"
+  const activeTheme = selectedTheme || themes.find((t) => t.name === "Cue Default")
+  const qrCodeSrc = portfolioUrl ? portfolioQrSrc(portfolioUrl, activeTheme) : null
+
+  async function requestPortfolio(profile, theme, font) {
+    const payload = { ...profile }
+    const colors = themeColors(theme)
+    if (colors) payload.theme = colors
+    if (font) payload.font = font.value
+
+    const portfolioRes = await fetch(`${apiBase}/api/generate-portfolio`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+    const result = await portfolioRes.json()
+    console.log("Portfolio generation response:", result)
+    if (!portfolioRes.ok) {
+      console.error("Portfolio generation failed:", portfolioRes.status, result)
+      return null
+    }
+    if (result.portfolio_id) {
+      return `${apiBase}/api/portfolio/${result.portfolio_id}`
+    }
+    return null
+  }
+
+  async function handleRegeneratePortfolio() {
+    if (!myProfile) return
+    setRegeneratingPortfolio(true)
+    try {
+      const url = await requestPortfolio(myProfile, selectedTheme, selectedFont)
+      if (url) {
+        hasPortfolioRef.current = true
+        setPortfolioUrl(url)
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setRegeneratingPortfolio(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!myProfile || !hasPortfolioRef.current) return
+
+    const timer = setTimeout(async () => {
+      setRegeneratingPortfolio(true)
+      try {
+        const url = await requestPortfolio(myProfile, selectedTheme, selectedFont)
+        if (url) setPortfolioUrl(url)
+      } catch (e) {
+        console.error(e)
+      } finally {
+        setRegeneratingPortfolio(false)
+      }
+    }, 400)
+
+    return () => clearTimeout(timer)
+  }, [selectedTheme, selectedFont])
 
   async function handleResumeUpload(event) {
     const file = event.target.files[0]
@@ -40,13 +320,22 @@ export default function App() {
     const formData = new FormData()
     formData.append("file", file)
     setUploadingResume(true)
+    setPortfolioUrl(null)
+    hasPortfolioRef.current = false
     try {
-      const res = await fetch("https://cue-production-b6e2.up.railway.app/api/extract-resume", {
+      const res = await fetch(`${apiBase}/api/extract-resume`, {
         method: "POST",
         body: formData,
       })
       const data = await res.json()
       setMyProfile(data)
+
+      console.log("Sending portfolio profile:", data)
+      const url = await requestPortfolio(data, selectedTheme, selectedFont)
+      if (url) {
+        hasPortfolioRef.current = true
+        setPortfolioUrl(url)
+      }
     } catch (e) {
       console.error(e)
     } finally {
@@ -56,6 +345,10 @@ export default function App() {
 
   function handleRemoveProfile() {
     setMyProfile(null)
+    setPortfolioUrl(null)
+    hasPortfolioRef.current = false
+    setSelectedTheme(null)
+    setSelectedFont(null)
     if (resumeUrl) {
       URL.revokeObjectURL(resumeUrl)
       setResumeUrl(null)
@@ -77,7 +370,7 @@ export default function App() {
     setError(null)
     setSpeaker(null)
     try {
-      const res = await fetch("https://cue-production-b6e2.up.railway.app/api/research", {
+      const res = await fetch(`${apiBase}/api/research`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -132,6 +425,12 @@ export default function App() {
   return (
     <>
       <style>{`
+        html {
+          font-size: 16px;
+          -webkit-text-size-adjust: 100%;
+          text-size-adjust: 100%;
+        }
+
         .cue-content {
           position: relative;
           z-index: 10;
@@ -629,7 +928,7 @@ export default function App() {
                       disabled={uploadingResume}
                       className="cue-btn px-6 py-2.5 rounded-full text-sm font-semibold disabled:opacity-50"
                     >
-                      Upload your resume
+                      {myProfile ? "Update resume" : "Upload your resume"}
                     </button>
                     {myProfile && (
                       <button
@@ -654,17 +953,12 @@ export default function App() {
                     >
                       {profileInitial}
                     </div>
-                    <h2 className="text-xl font-bold" style={{ color: palette.mocha }}>
+                    <h2 className="text-3xl font-bold" style={{ color: palette.mocha }}>
                       {myProfile?.name || "Your Name"}
                     </h2>
-                    <p className="text-sm mt-1" style={{ color: palette.indigo }}>
-                      {myProfile?.role || "Upload your resume to get started"}
+                    <p className="text-sm mt-1" style={{ color: palette.mocha }}>
+                      {myProfile?.tagline || "Upload your resume to get started"}
                     </p>
-                    {myProfile?.skills_summary && (
-                      <p className="text-xs mt-1" style={{ color: palette.ink }}>
-                        {myProfile.skills_summary}
-                      </p>
-                    )}
                     {profileLinks.length > 0 && (
                       <div className="flex gap-3 justify-center items-stretch mt-4">
                         {profileLinks.map(function (link) {
@@ -682,66 +976,132 @@ export default function App() {
                         })}
                       </div>
                     )}
-                    <div
-                      className="mt-6 pt-6 flex flex-col items-center"
-                      style={{ borderTop: `1px solid rgba(${patternColor}, 0.2)` }}
-                    >
-                      <div className="p-3 rounded-xl" style={{ background: palette.cream }}>
-                        <img
-                          src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https://cue-sepia-omega.vercel.app"
-                          alt="QR code linking to profile"
-                          width={120}
-                          height={120}
-                        />
-                      </div>
-                      <p className="text-xs mt-3" style={{ color: palette.indigo }}>
-                        Scan to save my profile
-                      </p>
-                    </div>
                   </div>
 
-                  <div className="space-y-3">
-                    {myProfile ? (
-                      myProfile.projects?.length > 0 ? (
-                        myProfile.projects.map(function (project) {
-                          return (
-                            <div key={project.name} className="cue-card rounded-2xl p-5">
-                              <h3 className="font-semibold text-sm" style={{ color: palette.mocha }}>
-                                {project.name}
-                              </h3>
-                              <p className="text-xs mt-1 leading-relaxed" style={{ color: palette.ink }}>
-                                {project.desc}
-                              </p>
-                              <div className="flex gap-2 mt-2 flex-wrap">
-                                {project.tech.map(function (t) {
-                                  return (
-                                    <span
-                                      key={t}
-                                      className="text-xs px-2 py-0.5 rounded-full"
-                                      style={{
-                                        background: "rgba(170, 171, 202, 0.45)",
-                                        color: palette.indigo,
-                                      }}
-                                    >
-                                      {t}
-                                    </span>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                          )
-                        })
-                      ) : (
-                        <p className="text-sm text-center py-6" style={{ color: palette.indigo }}>
-                          No projects found on your resume.
-                        </p>
-                      )
-                    ) : (
-                      <p className="text-sm text-center py-6" style={{ color: palette.indigo }}>
-                        Upload your resume to build your profile
+                  {myProfile && (
+                    <div className="cue-card rounded-2xl p-5 mb-4">
+                      <h3 className="text-sm font-semibold mb-3" style={{ color: palette.mocha }}>
+                        Customize your portfolio
+                      </h3>
+                      <p className="text-xs mb-3" style={{ color: palette.indigo }}>
+                        Theme
                       </p>
-                    )}
-                  </div>
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {themes.map(function (theme) {
+                          const isSelected =
+                            selectedTheme?.name === theme.name ||
+                            (!selectedTheme && theme.name === "Cue Default")
+                          return (
+                            <button
+                              key={theme.name}
+                              type="button"
+                              title={theme.name}
+                              onClick={() => setSelectedTheme(theme.name === "Cue Default" ? null : theme)}
+                              className="relative w-9 h-9 rounded-full shrink-0 transition-transform"
+                              style={{
+                                background: `linear-gradient(135deg, ${theme.background} 50%, ${theme.heading_color} 50%)`,
+                                border: isSelected
+                                  ? `2px solid ${palette.mocha}`
+                                  : `2px solid ${theme.card_border}`,
+                                boxShadow: isSelected ? `0 0 0 2px ${palette.cream}, 0 0 0 4px ${palette.mocha}` : "none",
+                              }}
+                              aria-label={theme.name}
+                              aria-pressed={isSelected}
+                            />
+                          )
+                        })}
+                      </div>
+                      <p className="text-xs mb-2" style={{ color: palette.indigo }}>
+                        Font
+                      </p>
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {fonts.map(function (font) {
+                          const isSelected =
+                            selectedFont?.name === font.name ||
+                            (!selectedFont && font.name === "Georgia")
+                          return (
+                            <button
+                              key={font.name}
+                              type="button"
+                              onClick={() => setSelectedFont(font.name === "Georgia" ? null : font)}
+                              className="text-xs px-3 py-1.5 rounded-full transition-colors"
+                              style={{
+                                fontFamily: font.value,
+                                background: isSelected ? palette.purple : "rgba(170, 171, 202, 0.25)",
+                                color: isSelected ? palette.cream : palette.ink,
+                                border: isSelected
+                                  ? `1px solid ${palette.purple}`
+                                  : `1px solid ${palette.periwinkle}`,
+                              }}
+                              aria-pressed={isSelected}
+                            >
+                              {font.name}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleRegeneratePortfolio}
+                        disabled={regeneratingPortfolio}
+                        className="cue-btn px-5 py-2 rounded-full text-sm font-semibold disabled:opacity-50"
+                      >
+                        {regeneratingPortfolio ? "Regenerating..." : "Regenerate portfolio"}
+                      </button>
+                    </div>
+                  )}
+
+                  {(portfolioUrl || uploadingResume || regeneratingPortfolio) && (
+                    <div className="cue-card rounded-2xl p-6 mb-4 text-center">
+                      <h3 className="text-sm font-semibold mb-1" style={{ color: palette.mocha }}>
+                        Share your portfolio
+                      </h3>
+                      <p className="text-xs mb-4" style={{ color: palette.indigo }}>
+                        Scan to open your live portfolio — updates when you change theme or font
+                      </p>
+                      {qrCodeSrc ? (
+                        <div
+                          className="p-3 rounded-xl relative inline-block"
+                          style={{
+                            background: activeTheme.background,
+                            border: `1px solid ${activeTheme.card_border}`,
+                          }}
+                        >
+                          <img
+                            key={`${portfolioUrl}-${activeTheme.name}-${selectedFont?.name || "Georgia"}`}
+                            src={qrCodeSrc}
+                            alt="QR code linking to portfolio"
+                            width={120}
+                            height={120}
+                            className={regeneratingPortfolio ? "opacity-50" : ""}
+                          />
+                          {regeneratingPortfolio && (
+                            <span
+                              className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold uppercase tracking-wide"
+                              style={{ color: activeTheme.heading_color }}
+                            >
+                              Updating
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-xs" style={{ color: palette.indigo }}>
+                          Generating portfolio QR code...
+                        </p>
+                      )}
+                      {portfolioUrl && (
+                        <a
+                          href={portfolioUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs mt-3 block break-all hover:underline"
+                          style={{ color: palette.mocha }}
+                        >
+                          {portfolioUrl}
+                        </a>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </>
