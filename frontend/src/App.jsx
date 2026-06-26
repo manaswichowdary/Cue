@@ -221,13 +221,94 @@ function qrHex(color) {
   return (color || "#2e2a3d").replace("#", "")
 }
 
-function portfolioQrSrc(portfolioUrl, theme) {
+function hexToRgb(hex) {
+  const value = (hex || "#000000").replace("#", "")
+  const normalized =
+    value.length === 3 ? value.split("").map((ch) => ch + ch).join("") : value
+  return [
+    parseInt(normalized.slice(0, 2), 16),
+    parseInt(normalized.slice(2, 4), 16),
+    parseInt(normalized.slice(4, 6), 16),
+  ]
+}
+
+function relativeLuminance(hex) {
+  const channels = hexToRgb(hex).map((channel) => {
+    const scaled = channel / 255
+    return scaled <= 0.03928 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+}
+
+function blendTowardBlack(hex, amount) {
+  const [r, g, b] = hexToRgb(hex)
+  const mix = (channel) =>
+    Math.round(channel * (1 - amount))
+      .toString(16)
+      .padStart(2, "0")
+  return `#${mix(r)}${mix(g)}${mix(b)}`
+}
+
+function blendTowardWhite(hex, amount) {
+  const [r, g, b] = hexToRgb(hex)
+  const mix = (channel) =>
+    Math.round(channel + (255 - channel) * amount)
+      .toString(16)
+      .padStart(2, "0")
+  return `#${mix(r)}${mix(g)}${mix(b)}`
+}
+
+function contrastRatio(foreground, background) {
+  const l1 = relativeLuminance(foreground)
+  const l2 = relativeLuminance(background)
+  const lighter = Math.max(l1, l2)
+  const darker = Math.min(l1, l2)
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
+function balancedQrColors(theme) {
   const activeTheme = theme || themes.find((t) => t.name === "Cue Default")
+  let bg = activeTheme.card_bg || activeTheme.background || "#f8f5f1"
+  if (relativeLuminance(bg) < 0.82) {
+    bg = blendTowardWhite(bg, 0.22)
+  } else if (relativeLuminance(bg) > 0.97) {
+    bg = blendTowardWhite(activeTheme.background || "#f0ece6", 0.08)
+  }
+
+  const fgCandidates = [
+    blendTowardBlack(activeTheme.heading_color, 0.1),
+    blendTowardBlack(activeTheme.button_bg, 0.22),
+    activeTheme.heading_color,
+    blendTowardBlack(activeTheme.body_text, 0.15),
+  ]
+
+  let fg = blendTowardBlack(activeTheme.heading_color || "#a47864", 0.18)
+  for (const candidate of fgCandidates) {
+    if (!candidate) continue
+    const lum = relativeLuminance(candidate)
+    if (lum >= 0.12 && lum <= 0.42 && contrastRatio(candidate, bg) >= 3.5) {
+      fg = candidate
+      break
+    }
+  }
+
+  if (contrastRatio(fg, bg) < 3.5) {
+    fg = blendTowardBlack(activeTheme.heading_color || "#6c6c9b", 0.25)
+  }
+  if (relativeLuminance(fg) < 0.1) {
+    fg = blendTowardWhite(fg, 0.12)
+  }
+
+  return { fg, bg }
+}
+
+function portfolioQrSrc(portfolioUrl, theme) {
+  const { fg, bg } = balancedQrColors(theme)
   const params = new URLSearchParams({
     size: "120x120",
     data: portfolioUrl,
-    color: qrHex(activeTheme?.button_bg),
-    bgcolor: qrHex(activeTheme?.background),
+    color: qrHex(fg),
+    bgcolor: qrHex(bg),
   })
   return `https://api.qrserver.com/v1/create-qr-code/?${params.toString()}`
 }
@@ -255,6 +336,7 @@ export default function App() {
 
   const apiBase = "https://cue-production-b6e2.up.railway.app"
   const activeTheme = selectedTheme || themes.find((t) => t.name === "Cue Default")
+  const qrColors = balancedQrColors(activeTheme)
   const qrCodeSrc = portfolioUrl ? portfolioQrSrc(portfolioUrl, activeTheme) : null
 
   async function requestPortfolio(profile, theme, font) {
@@ -459,6 +541,7 @@ export default function App() {
         .cue-content {
           position: relative;
           z-index: 10;
+          font-weight: 500;
         }
 
         @keyframes slide-in-left {
@@ -490,6 +573,7 @@ export default function App() {
           opacity: 0;
           width: 100%;
           line-height: 1.65;
+          font-weight: 600;
         }
 
         .landing-buttons {
@@ -526,6 +610,14 @@ export default function App() {
           font-style: italic;
           line-height: 1;
           color: ${palette.mocha};
+          cursor: pointer;
+          background: none;
+          border: none;
+          padding: 0;
+        }
+
+        .cue-topbar-brand:hover {
+          color: ${palette.indigo};
         }
 
         .cue-topbar-btn {
@@ -560,6 +652,7 @@ export default function App() {
         .cue-tab-inactive {
           background: transparent;
           color: ${palette.indigo};
+          font-weight: 600;
         }
 
         .cue-tab-inactive:hover {
@@ -609,6 +702,7 @@ export default function App() {
         .cue-btn-ghost {
           background: transparent;
           color: ${palette.indigo};
+          font-weight: 600;
           border: 1px solid rgba(${patternColor}, 0.35);
           transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
         }
@@ -621,6 +715,7 @@ export default function App() {
 
         .cue-link-muted {
           color: ${palette.indigo};
+          font-weight: 600;
           background: none;
           border: none;
           cursor: pointer;
@@ -637,12 +732,14 @@ export default function App() {
           background: ${palette.card};
           border: 1px solid rgba(${patternColor}, 0.4);
           color: ${palette.ink};
+          font-weight: 500;
           box-shadow: inset 0 1px 3px rgba(${shadowColor}, 0.06);
           transition: border-color 0.15s ease, box-shadow 0.15s ease;
         }
 
         .cue-input::placeholder {
           color: rgba(79, 77, 132, 0.55);
+          font-weight: 500;
         }
 
         .cue-input:focus {
@@ -668,6 +765,7 @@ export default function App() {
 
         .cue-btn-profile-link {
           width: 5.75rem;
+          font-weight: 600;
         }
 
         .cue-card {
@@ -680,14 +778,15 @@ export default function App() {
 
         .cue-card-label {
           color: ${palette.lavender};
-          font-size: 0.75rem;
-          font-weight: 600;
+          font-size: 0.8rem;
+          font-weight: 700;
           letter-spacing: 0.06em;
           text-transform: uppercase;
         }
 
         .cue-card-title {
           color: ${palette.indigo};
+          font-weight: 700;
         }
 
         .cue-question-num {
@@ -798,7 +897,14 @@ export default function App() {
                     <path d="M19 12H5M12 19l-7-7 7-7" />
                   </svg>
                 </button>
-                <span className="cue-topbar-brand">Cue.</span>
+                <button
+                  type="button"
+                  onClick={() => setLandingDismissed(false)}
+                  className="cue-topbar-brand"
+                  aria-label="Back to home"
+                >
+                  Cue.
+                </button>
                 <div className="cue-topbar-tabs">
                   <button
                     type="button"
@@ -828,7 +934,7 @@ export default function App() {
                   <h2 className="text-2xl font-bold mb-2" style={{ color: palette.mocha }}>
                     Who are you about to talk to?
                   </h2>
-                  <p className="mb-8 text-sm" style={{ color: palette.indigo }}>
+                  <p className="mb-8 text-sm font-medium" style={{ color: palette.indigo }}>
                     Type their name. Get their background, why they matter, and a few good questions worth asking.
                   </p>
 
@@ -839,7 +945,7 @@ export default function App() {
                       onChange={(e) => setName(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && handleResearch()}
                       placeholder="e.g. Andrej Karpathy"
-                      className="cue-input flex-1 rounded-xl px-4 py-3 text-sm"
+                      className="cue-input flex-1 rounded-xl px-4 py-3 text-sm font-medium"
                     />
                     <button
                       onClick={handleResearch}
@@ -855,10 +961,10 @@ export default function App() {
                       <div
                         className="cue-spinner inline-block w-8 h-8 rounded-full animate-spin mb-4"
                       />
-                      <p className="text-sm font-medium" style={{ color: palette.indigo }}>
+                      <p className="text-sm font-semibold" style={{ color: palette.indigo }}>
                         Searching the web for {name}...
                       </p>
-                      <p className="text-xs mt-1" style={{ color: palette.indigo }}>
+                      <p className="text-sm mt-1 font-medium" style={{ color: palette.indigo }}>
                         This takes about 45 seconds
                       </p>
                     </div>
@@ -866,7 +972,7 @@ export default function App() {
 
                   {error && (
                     <div
-                      className="rounded-xl p-4 text-sm"
+                      className="rounded-xl p-4 text-sm font-medium"
                       style={{
                         background: "rgba(164, 120, 100, 0.1)",
                         border: "1px solid rgba(164, 120, 100, 0.3)",
@@ -884,10 +990,10 @@ export default function App() {
                         <h3 className="text-xl font-bold cue-card-title">
                           {speaker.name}
                         </h3>
-                        <p className="text-sm mt-1" style={{ color: palette.indigo }}>
+                        <p className="text-sm mt-1 font-semibold" style={{ color: palette.indigo }}>
                           {speaker.role} at {speaker.company}
                         </p>
-                        <p className="text-sm mt-3 leading-relaxed" style={{ color: palette.ink }}>
+                        <p className="text-sm mt-3 leading-relaxed font-medium" style={{ color: palette.ink }}>
                           {speaker.why_they_matter}
                         </p>
                       </div>
@@ -897,12 +1003,12 @@ export default function App() {
                           <p className="cue-card-label">Your intro line</p>
                           <button
                             onClick={() => navigator.clipboard.writeText(speaker.intro_line)}
-                            className="cue-btn-ghost text-xs px-2.5 py-1 rounded-lg"
+                            className="cue-btn-ghost text-sm font-semibold px-2.5 py-1 rounded-lg"
                           >
                             Copy
                           </button>
                         </div>
-                        <p className="text-sm leading-relaxed italic" style={{ color: palette.ink }}>
+                        <p className="text-sm leading-relaxed italic font-medium" style={{ color: palette.ink }}>
                           "{speaker.intro_line}"
                         </p>
                       </div>
@@ -917,13 +1023,13 @@ export default function App() {
                                   {i + 1}.
                                 </span>
                                 <div className="flex-1">
-                                  <p className="text-sm leading-relaxed" style={{ color: palette.ink }}>
+                                  <p className="text-sm leading-relaxed font-medium" style={{ color: palette.ink }}>
                                     {q}
                                   </p>
                                 </div>
                                 <button
                                   onClick={() => navigator.clipboard.writeText(q)}
-                                  className="cue-btn-ghost text-xs px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 shrink-0"
+                                  className="cue-btn-ghost text-sm font-semibold px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 shrink-0"
                                 >
                                   Copy
                                 </button>
@@ -972,13 +1078,13 @@ export default function App() {
                       <button
                         type="button"
                         onClick={handleRemoveProfile}
-                        className="cue-link-muted block mx-auto mt-2 text-xs"
+                        className="cue-link-muted block mx-auto mt-2 text-sm font-semibold"
                       >
                         Remove resume
                       </button>
                     )}
                     {uploadingResume && (
-                      <p className="text-sm mt-3" style={{ color: palette.indigo }}>
+                      <p className="text-sm mt-3 font-medium" style={{ color: palette.indigo }}>
                         Reading your resume...
                       </p>
                     )}
@@ -988,13 +1094,13 @@ export default function App() {
                     <div
                       className="cue-card rounded-xl px-4 py-3 mb-4 flex items-start justify-between gap-3 text-left"
                     >
-                      <p className="text-xs leading-relaxed" style={{ color: palette.indigo }}>
+                      <p className="text-sm leading-relaxed font-medium" style={{ color: palette.indigo }}>
                         Loaded your saved resume from this device. Remove resume to clear it.
                       </p>
                       <button
                         type="button"
                         onClick={() => setShowLoadedProfileNote(false)}
-                        className="cue-link-muted text-xs shrink-0"
+                        className="cue-link-muted text-sm font-semibold shrink-0"
                         aria-label="Dismiss"
                       >
                         Dismiss
@@ -1012,7 +1118,7 @@ export default function App() {
                     <h2 className="text-3xl font-bold" style={{ color: palette.mocha }}>
                       {myProfile?.name || "Your Name"}
                     </h2>
-                    <p className="text-sm mt-1" style={{ color: palette.mocha }}>
+                    <p className="text-sm mt-1 font-semibold" style={{ color: palette.mocha }}>
                       {myProfile?.tagline || "Upload your resume to get started"}
                     </p>
                     {profileLinks.length > 0 && (
@@ -1024,7 +1130,7 @@ export default function App() {
                               href={link.href}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="cue-btn cue-btn-profile-link text-xs py-2 rounded-lg"
+                              className="cue-btn cue-btn-profile-link text-sm font-semibold py-2 rounded-lg"
                             >
                               {link.label}
                             </a>
@@ -1036,10 +1142,10 @@ export default function App() {
 
                   {myProfile && (
                     <div className="cue-card rounded-2xl p-5 mb-4">
-                      <h3 className="text-sm font-semibold mb-3" style={{ color: palette.mocha }}>
+                      <h3 className="text-sm font-bold mb-3" style={{ color: palette.mocha }}>
                         Customize your portfolio
                       </h3>
-                      <p className="text-xs mb-3" style={{ color: palette.indigo }}>
+                      <p className="text-sm mb-3 font-semibold" style={{ color: palette.indigo }}>
                         Theme
                       </p>
                       <div className="flex flex-wrap gap-2 mb-4">
@@ -1067,7 +1173,7 @@ export default function App() {
                           )
                         })}
                       </div>
-                      <p className="text-xs mb-2" style={{ color: palette.indigo }}>
+                      <p className="text-sm mb-2 font-semibold" style={{ color: palette.indigo }}>
                         Font
                       </p>
                       <div className="flex flex-wrap gap-2 mb-4">
@@ -1080,7 +1186,7 @@ export default function App() {
                               key={font.name}
                               type="button"
                               onClick={() => setSelectedFont(font.name === "Georgia" ? null : font)}
-                              className="text-xs px-3 py-1.5 rounded-full transition-colors"
+                              className="text-sm px-3 py-1.5 rounded-full font-semibold transition-colors"
                               style={{
                                 fontFamily: font.value,
                                 background: isSelected ? palette.purple : "rgba(170, 171, 202, 0.25)",
@@ -1109,17 +1215,17 @@ export default function App() {
 
                   {(portfolioUrl || uploadingResume || regeneratingPortfolio) && (
                     <div className="cue-card rounded-2xl p-6 mb-4 text-center">
-                      <h3 className="text-sm font-semibold mb-1" style={{ color: palette.mocha }}>
+                      <h3 className="text-sm font-bold mb-1" style={{ color: palette.mocha }}>
                         Share your portfolio
                       </h3>
-                      <p className="text-xs mb-4" style={{ color: palette.indigo }}>
+                      <p className="text-sm mb-4 font-medium" style={{ color: palette.indigo }}>
                         Scan to open your live portfolio — updates when you change theme or font
                       </p>
                       {qrCodeSrc ? (
                         <div
                           className="p-3 rounded-xl relative inline-block"
                           style={{
-                            background: activeTheme.background,
+                            background: qrColors.bg,
                             border: `1px solid ${activeTheme.card_border}`,
                           }}
                         >
@@ -1141,7 +1247,7 @@ export default function App() {
                           )}
                         </div>
                       ) : (
-                        <p className="text-xs" style={{ color: palette.indigo }}>
+                        <p className="text-sm font-medium" style={{ color: palette.indigo }}>
                           Generating portfolio QR code...
                         </p>
                       )}
@@ -1150,7 +1256,7 @@ export default function App() {
                           href={portfolioUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-xs mt-3 block break-all hover:underline"
+                          className="text-sm mt-3 block break-all font-medium hover:underline"
                           style={{ color: palette.mocha }}
                         >
                           {portfolioUrl}

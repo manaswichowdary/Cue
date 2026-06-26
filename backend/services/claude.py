@@ -259,11 +259,27 @@ def _contrast_ratio_hex(foreground: str, background: str) -> float:
     return (lighter + 0.05) / (darker + 0.05)
 
 
+def _darken_for_contrast(color: str, background: str, min_ratio: float = 4.5) -> str:
+    """Progressively darken a color until it meets contrast on the background."""
+    if _contrast_ratio_hex(color, background) >= min_ratio:
+        return color
+    for amount in (0.18, 0.32, 0.48, 0.62, 0.78):
+        candidate = _blend_toward_black(color, amount)
+        if _contrast_ratio_hex(candidate, background) >= min_ratio:
+            return candidate
+    return "#1a1a28"
+
+
 def _adjust_theme_contrast(colors: dict) -> dict:
     """Pull text colors toward readable dark-on-light or light-on-dark."""
     adjusted = dict(colors)
     bg = adjusted["background"]
     dark_bg = _is_dark_theme(bg)
+    card_surface = adjusted["card_bg"]
+    if not dark_bg:
+        card_surface = _blend_toward_white(adjusted["card_bg"], 0.4)
+        if _relative_luminance(card_surface) - _relative_luminance(bg) < 0.12:
+            card_surface = "#ffffff"
 
     if dark_bg:
         if _contrast_ratio_hex(adjusted["body_text"], bg) < 4.5:
@@ -271,15 +287,12 @@ def _adjust_theme_contrast(colors: dict) -> dict:
         if _contrast_ratio_hex(adjusted["heading_color"], bg) < 3.0:
             adjusted["heading_color"] = adjusted["button_bg"]
     else:
-        if _contrast_ratio_hex(adjusted["body_text"], bg) < 4.5:
-            adjusted["body_text"] = "#1e1e2e"
-        if _contrast_ratio_hex(adjusted["heading_color"], bg) < 3.0:
-            darkened = _blend_toward_black(adjusted["heading_color"], 0.5)
-            adjusted["heading_color"] = (
-                darkened
-                if _contrast_ratio_hex(darkened, bg) >= 3.0
-                else "#1e1e2e"
-            )
+        adjusted["body_text"] = _darken_for_contrast(adjusted["body_text"], bg, 5.0)
+        adjusted["heading_color"] = _darken_for_contrast(adjusted["heading_color"], bg, 4.5)
+        adjusted["body_text"] = _darken_for_contrast(adjusted["body_text"], card_surface, 4.8)
+        adjusted["heading_color"] = _darken_for_contrast(
+            adjusted["heading_color"], card_surface, 4.2
+        )
         btn_lum = _relative_luminance(adjusted["button_bg"])
         if btn_lum > 0.6 and _relative_luminance(adjusted["button_text"]) > 0.5:
             adjusted["button_text"] = "#1e1e2e"
@@ -289,10 +302,21 @@ def _adjust_theme_contrast(colors: dict) -> dict:
 
 def _accent_color(button_bg: str, heading: str, body: str, background: str) -> str:
     """Pick a link/label accent with enough contrast on the page background."""
-    for candidate in (heading, body, button_bg, "#2e2a3d", "#e8e8e8"):
-        if _contrast_ratio_hex(candidate, background) >= 3.0:
+    if _is_dark_theme(background):
+        for candidate in (heading, body, button_bg, "#2e2a3d", "#e8e8e8"):
+            if _contrast_ratio_hex(candidate, background) >= 3.0:
+                return candidate
+        return "#e8e8e8"
+
+    for candidate in (
+        body,
+        _darken_for_contrast(heading, background, 4.5),
+        _darken_for_contrast(button_bg, background, 4.5),
+        "#2e2a3d",
+    ):
+        if _contrast_ratio_hex(candidate, background) >= 4.5:
             return candidate
-    return "#e8e8e8" if _is_dark_theme(background) else "#2e2a3d"
+    return "#2e2a3d"
 
 
 def _palette_button_colors(
@@ -614,6 +638,26 @@ def generate_portfolio_html(
     border_r, border_g, border_b = _hex_to_rgb(c_border)
     heading_r, heading_g, heading_b = _hex_to_rgb(c_heading)
     c_card_surface, c_tag_bg, c_tag_border_line = _portfolio_surface_colors(c_bg, c_card, c_border)
+    c_contact_label = c_btn
+    if _contrast_ratio_hex(c_contact_label, c_card_surface) < 3.5:
+        c_contact_label = (
+            c_heading
+            if _contrast_ratio_hex(c_heading, c_card_surface) >= 3.5
+            else c_text
+        )
+    c_subtext = c_text
+    dark_bg = _is_dark_theme(c_bg)
+    if dark_bg:
+        c_hero_eyebrow = c_accent
+        c_hero_tagline = c_text
+        c_nav = c_accent
+    else:
+        hero_surface = _blend_toward_white(c_card, 0.35)
+        if _relative_luminance(hero_surface) - _relative_luminance(c_bg) < 0.08:
+            hero_surface = _blend_toward_white(c_bg, 0.1)
+        c_hero_eyebrow = _darken_for_contrast(c_heading, hero_surface, 5.2)
+        c_hero_tagline = _darken_for_contrast(c_text, hero_surface, 5.0)
+        c_nav = _darken_for_contrast(c_heading, c_bg, 4.8)
     btn_palette = _palette_button_colors(
         c_bg, c_heading, c_text, c_border, c_btn, c_btn_text, c_card_surface
     )
@@ -663,6 +707,7 @@ def generate_portfolio_html(
       color: {c_text};
       font-family: {c_font};
       font-size: 1rem;
+      font-weight: 500;
       line-height: 1.65;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
@@ -724,7 +769,7 @@ def generate_portfolio_html(
     }}
     .nav-links a {{
       text-decoration: none;
-      color: {c_accent};
+      color: {c_nav};
       font-size: 0.88rem;
       font-weight: 600;
     }}
@@ -766,12 +811,12 @@ def generate_portfolio_html(
       animation: fade-up 0.85s ease-out 0.36s both;
     }}
     .eyebrow {{
-      color: {c_accent};
+      color: {c_hero_eyebrow};
       font-size: 0.95rem;
       letter-spacing: 0.08em;
       text-transform: uppercase;
       margin-bottom: 1rem;
-      font-weight: 700;
+      font-weight: 800;
     }}
     .hero h1 {{
       color: {c_heading};
@@ -785,8 +830,8 @@ def generate_portfolio_html(
       font-size: clamp(1.05rem, 2.5vw, 1.35rem);
       max-width: 38rem;
       margin: 0 auto 1.75rem;
-      color: {c_text};
-      opacity: 0.92;
+      color: {c_hero_tagline};
+      font-weight: 700;
     }}
     .hero-actions {{
       display: flex;
@@ -841,14 +886,15 @@ def generate_portfolio_html(
       margin-bottom: 0.35rem;
     }}
     .section-sub {{
-      color: {c_accent};
+      color: {c_subtext};
       font-size: 0.98rem;
-      opacity: 0.9;
+      font-weight: 600;
     }}
     .about-copy {{
       font-size: 1.05rem;
       max-width: 42rem;
       margin-bottom: 1.25rem;
+      font-weight: 500;
     }}
     .about-info {{
       max-width: 42rem;
@@ -856,7 +902,8 @@ def generate_portfolio_html(
     }}
     .about-info p {{
       font-size: 0.95rem;
-      color: {c_accent};
+      color: {c_subtext};
+      font-weight: 600;
       margin-bottom: 0.35rem;
     }}
     .skill-cloud,
@@ -869,6 +916,7 @@ def generate_portfolio_html(
       background: {c_tag_bg};
       color: {c_text};
       font-size: 0.8rem;
+      font-weight: 600;
       padding: 0.35rem 0.75rem;
       border-radius: 999px;
       border: 1px solid {c_tag_border_line};
@@ -908,6 +956,7 @@ def generate_portfolio_html(
     .info-card p {{
       font-size: 0.95rem;
       margin-bottom: 0.85rem;
+      font-weight: 500;
     }}
     .timeline {{
       display: grid;
@@ -939,11 +988,11 @@ def generate_portfolio_html(
     .timeline-org {{
       color: {c_text};
       font-weight: 600;
-      opacity: 0.85;
     }}
     .timeline-body ul {{
       margin-left: 1.1rem;
       font-size: 0.93rem;
+      font-weight: 500;
     }}
     .timeline-body li {{
       margin-bottom: 0.35rem;
@@ -992,7 +1041,7 @@ def generate_portfolio_html(
     .contact-value {{
       color: {c_text};
       text-decoration: none;
-      font-weight: 600;
+      font-weight: 700;
       font-size: 0.98rem;
     }}
     .contact-line a:hover {{
@@ -1001,7 +1050,7 @@ def generate_portfolio_html(
     .contact-label {{
       display: block;
       min-width: auto;
-      color: {c_btn};
+      color: {c_contact_label};
       font-size: 0.72rem;
       letter-spacing: 0.08em;
       text-transform: uppercase;
