@@ -2,7 +2,7 @@
 
 **Know who you are meeting. Show who you are.**
 
-Cue is a networking toolkit built for conferences and professional events. Enter a name and get real-time research on who you're about to meet—plus tailored conversation questions and a natural intro line you can actually say out loud. Upload your resume and Cue instantly builds a shareable personal portfolio you can customize and hand off via QR code.
+Cue is a networking toolkit built for conferences and professional events. Enter a name and get real-time research on who you're about to meet, plus tailored conversation questions and a natural intro line you can actually say out loud. Upload your resume and Cue instantly builds a shareable personal portfolio you can customize and hand off via QR code.
 
 ## Live Demo
 
