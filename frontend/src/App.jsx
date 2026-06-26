@@ -246,8 +246,12 @@ export default function App() {
   const [selectedTheme, setSelectedTheme] = useState(null)
   const [selectedFont, setSelectedFont] = useState(null)
   const [regeneratingPortfolio, setRegeneratingPortfolio] = useState(false)
+  const [rememberOnDevice, setRememberOnDevice] = useState(false)
+  const [showLoadedProfileNote, setShowLoadedProfileNote] = useState(false)
   const resumeInputRef = useRef(null)
   const hasPortfolioRef = useRef(false)
+
+  const CUE_PROFILE_KEY = "cueProfile"
 
   const apiBase = "https://cue-production-b6e2.up.railway.app"
   const activeTheme = selectedTheme || themes.find((t) => t.name === "Cue Default")
@@ -310,6 +314,21 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [selectedTheme, selectedFont])
 
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(CUE_PROFILE_KEY)
+      if (!saved) return
+
+      const parsed = JSON.parse(saved)
+      setMyProfile(parsed)
+      setRememberOnDevice(true)
+      setShowLoadedProfileNote(true)
+    } catch (e) {
+      console.error("Failed to load saved profile:", e)
+      localStorage.removeItem(CUE_PROFILE_KEY)
+    }
+  }, [])
+
   async function handleResumeUpload(event) {
     const file = event.target.files[0]
     if (!file) return
@@ -329,6 +348,9 @@ export default function App() {
       })
       const data = await res.json()
       setMyProfile(data)
+      if (rememberOnDevice) {
+        localStorage.setItem(CUE_PROFILE_KEY, JSON.stringify(data))
+      }
 
       console.log("Sending portfolio profile:", data)
       const url = await requestPortfolio(data, selectedTheme, selectedFont)
@@ -349,6 +371,9 @@ export default function App() {
     hasPortfolioRef.current = false
     setSelectedTheme(null)
     setSelectedFont(null)
+    setRememberOnDevice(false)
+    setShowLoadedProfileNote(false)
+    localStorage.removeItem(CUE_PROFILE_KEY)
     if (resumeUrl) {
       URL.revokeObjectURL(resumeUrl)
       setResumeUrl(null)
@@ -930,6 +955,19 @@ export default function App() {
                     >
                       {myProfile ? "Update resume" : "Upload your resume"}
                     </button>
+                    {!myProfile && (
+                      <label className="flex items-center justify-center gap-2 mt-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={rememberOnDevice}
+                          onChange={(e) => setRememberOnDevice(e.target.checked)}
+                          className="rounded"
+                        />
+                        <span className="text-sm font-semibold" style={{ color: palette.indigo }}>
+                          Remember my resume on this device
+                        </span>
+                      </label>
+                    )}
                     {myProfile && (
                       <button
                         type="button"
@@ -945,6 +983,24 @@ export default function App() {
                       </p>
                     )}
                   </div>
+
+                  {showLoadedProfileNote && myProfile && (
+                    <div
+                      className="cue-card rounded-xl px-4 py-3 mb-4 flex items-start justify-between gap-3 text-left"
+                    >
+                      <p className="text-xs leading-relaxed" style={{ color: palette.indigo }}>
+                        Loaded your saved resume from this device. Remove resume to clear it.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setShowLoadedProfileNote(false)}
+                        className="cue-link-muted text-xs shrink-0"
+                        aria-label="Dismiss"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  )}
 
                   <div className="cue-card rounded-2xl p-6 text-center mb-4">
                     <div
