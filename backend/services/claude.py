@@ -1,4 +1,5 @@
 import anthropic
+import html
 import json
 import os
 import re
@@ -182,6 +183,163 @@ def get_speaker_profile(name: str, user_background: str = "") -> dict:
     profile = generate_speaker_profile(name, research, user_background)
     
     return profile
+
+
+def generate_portfolio_html(profile: dict) -> str:
+    """
+    Build a self-contained portfolio HTML page from extracted resume profile data.
+    """
+    name = html.escape((profile.get("name") or "Your Name").strip())
+    role = html.escape((profile.get("role") or "").strip())
+    skills = html.escape((profile.get("skills_summary") or "").strip())
+    linkedin = (profile.get("linkedin") or "").strip()
+    github = (profile.get("github") or "").strip()
+    projects = profile.get("projects") or []
+
+    link_buttons = ""
+    if linkedin:
+        safe_linkedin = html.escape(linkedin, quote=True)
+        link_buttons += f'<a class="btn" href="{safe_linkedin}" target="_blank" rel="noopener noreferrer">LinkedIn</a>'
+    if github:
+        safe_github = html.escape(github, quote=True)
+        link_buttons += f'<a class="btn" href="{safe_github}" target="_blank" rel="noopener noreferrer">GitHub</a>'
+
+    links_html = f'<div class="links">{link_buttons}</div>' if link_buttons else ""
+
+    project_cards = ""
+    for project in projects:
+        project_name = html.escape((project.get("name") or "Project").strip())
+        project_desc = html.escape((project.get("desc") or "").strip())
+        tech_tags = ""
+        for tag in project.get("tech") or []:
+            tech_tags += f'<span class="tag">{html.escape(str(tag))}</span>'
+        project_cards += f"""
+        <article class="card">
+          <h2>{project_name}</h2>
+          <p>{project_desc}</p>
+          <div class="tags">{tech_tags}</div>
+        </article>
+        """
+
+    if not project_cards:
+        project_cards = '<p class="empty">No projects listed yet.</p>'
+
+    skills_html = f'<p class="skills">{skills}</p>' if skills else ""
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{name} — Portfolio</title>
+  <style>
+    * {{
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }}
+    body {{
+      background: #f0ece6;
+      color: #2e2a3d;
+      font-family: Georgia, "Times New Roman", serif;
+      line-height: 1.6;
+      padding: 2rem 1rem 3rem;
+    }}
+    .container {{
+      max-width: 720px;
+      margin: 0 auto;
+    }}
+    header {{
+      text-align: center;
+      margin-bottom: 2rem;
+    }}
+    h1 {{
+      color: #a47864;
+      font-size: clamp(2rem, 6vw, 2.75rem);
+      font-weight: 700;
+      margin-bottom: 0.35rem;
+    }}
+    .role {{
+      color: #2e2a3d;
+      font-size: 1.05rem;
+      margin-bottom: 1rem;
+    }}
+    .skills {{
+      font-size: 0.95rem;
+      margin-bottom: 1rem;
+      opacity: 0.9;
+    }}
+    .links {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      justify-content: center;
+      margin-top: 0.5rem;
+    }}
+    .btn {{
+      background: #6c6c9b;
+      color: #ffffff;
+      text-decoration: none;
+      padding: 0.55rem 1.1rem;
+      border-radius: 999px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      display: inline-block;
+    }}
+    .btn:hover {{
+      background: #4f4d84;
+    }}
+    .card {{
+      background: #ffffff;
+      border: 1px solid #aaabca;
+      border-radius: 1rem;
+      padding: 1.25rem 1.35rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 2px 8px rgba(46, 42, 61, 0.06);
+    }}
+    .card h2 {{
+      color: #a47864;
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }}
+    .card p {{
+      font-size: 0.95rem;
+      margin-bottom: 0.75rem;
+    }}
+    .tags {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+    }}
+    .tag {{
+      background: rgba(170, 171, 202, 0.25);
+      color: #2e2a3d;
+      font-size: 0.75rem;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+    }}
+    .empty {{
+      text-align: center;
+      opacity: 0.75;
+      padding: 1rem 0;
+    }}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>{name}</h1>
+      {f'<p class="role">{role}</p>' if role else ''}
+      {skills_html}
+      {links_html}
+    </header>
+    <main>
+      {project_cards}
+    </main>
+  </div>
+</body>
+</html>"""
 
 
 _GITHUB_USERNAME = r"[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}"
