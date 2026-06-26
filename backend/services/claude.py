@@ -24,7 +24,8 @@ def research_speaker(name: str) -> str:
         tools=[
             {
                 "type": "web_search_20250305",
-                "name": "web_search"
+                "name": "web_search",
+                "max_uses": 3,
             }
         ],
         messages=[
@@ -185,15 +186,207 @@ def get_speaker_profile(name: str, user_background: str = "") -> dict:
     return profile
 
 
-def generate_portfolio_html(profile: dict) -> str:
+DEFAULT_PORTFOLIO_THEME = {
+    "background": "#f0ece6",
+    "heading_color": "#a47864",
+    "card_bg": "#ffffff",
+    "card_border": "#aaabca",
+    "body_text": "#2e2a3d",
+    "button_bg": "#6c6c9b",
+    "button_text": "#ffffff",
+}
+
+DEFAULT_PORTFOLIO_FONT = 'Georgia, "Times New Roman", serif'
+
+
+def _resolve_portfolio_theme(theme: dict | None) -> dict:
+    resolved = dict(DEFAULT_PORTFOLIO_THEME)
+    if theme:
+        for key in DEFAULT_PORTFOLIO_THEME:
+            value = theme.get(key)
+            if value:
+                resolved[key] = str(value).strip()
+    return resolved
+
+
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    value = hex_color.lstrip("#")
+    if len(value) == 3:
+        value = "".join(ch * 2 for ch in value)
+    return int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)
+
+
+def _rgba(hex_color: str, alpha: float) -> str:
+    r, g, b = _hex_to_rgb(hex_color)
+    return f"rgba({r}, {g}, {b}, {alpha})"
+
+
+def _relative_luminance(hex_color: str) -> float:
+    r, g, b = (x / 255.0 for x in _hex_to_rgb(hex_color))
+
+    def _linear(channel: float) -> float:
+        return channel / 12.92 if channel <= 0.03928 else ((channel + 0.055) / 1.055) ** 2.4
+
+    lr, lg, lb = _linear(r), _linear(g), _linear(b)
+    return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb
+
+
+def _blend_toward_white(hex_color: str, amount: float) -> str:
+    r, g, b = _hex_to_rgb(hex_color)
+    nr = int(r + (255 - r) * amount)
+    ng = int(g + (255 - g) * amount)
+    nb = int(b + (255 - b) * amount)
+    return f"#{nr:02x}{ng:02x}{nb:02x}"
+
+
+def _is_dark_theme(background: str) -> bool:
+    return _relative_luminance(background) < 0.2
+
+
+def _blend_toward_black(hex_color: str, amount: float) -> str:
+    r, g, b = _hex_to_rgb(hex_color)
+    nr = int(r * (1 - amount))
+    ng = int(g * (1 - amount))
+    nb = int(b * (1 - amount))
+    return f"#{nr:02x}{ng:02x}{nb:02x}"
+
+
+def _contrast_ratio_hex(foreground: str, background: str) -> float:
+    l1 = _relative_luminance(foreground)
+    l2 = _relative_luminance(background)
+    lighter = max(l1, l2)
+    darker = min(l1, l2)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def _adjust_theme_contrast(colors: dict) -> dict:
+    """Pull text colors toward readable dark-on-light or light-on-dark."""
+    adjusted = dict(colors)
+    bg = adjusted["background"]
+    dark_bg = _is_dark_theme(bg)
+
+    if dark_bg:
+        if _contrast_ratio_hex(adjusted["body_text"], bg) < 4.5:
+            adjusted["body_text"] = "#f4f4f4"
+        if _contrast_ratio_hex(adjusted["heading_color"], bg) < 3.0:
+            adjusted["heading_color"] = adjusted["button_bg"]
+    else:
+        if _contrast_ratio_hex(adjusted["body_text"], bg) < 4.5:
+            adjusted["body_text"] = "#1e1e2e"
+        if _contrast_ratio_hex(adjusted["heading_color"], bg) < 3.0:
+            darkened = _blend_toward_black(adjusted["heading_color"], 0.5)
+            adjusted["heading_color"] = (
+                darkened
+                if _contrast_ratio_hex(darkened, bg) >= 3.0
+                else "#1e1e2e"
+            )
+        btn_lum = _relative_luminance(adjusted["button_bg"])
+        if btn_lum > 0.6 and _relative_luminance(adjusted["button_text"]) > 0.5:
+            adjusted["button_text"] = "#1e1e2e"
+
+    return adjusted
+
+
+def _accent_color(button_bg: str, heading: str, body: str, background: str) -> str:
+    """Pick a link/label accent with enough contrast on the page background."""
+    for candidate in (heading, body, button_bg, "#2e2a3d", "#e8e8e8"):
+        if _contrast_ratio_hex(candidate, background) >= 3.0:
+            return candidate
+    return "#e8e8e8" if _is_dark_theme(background) else "#2e2a3d"
+
+
+def _palette_button_colors(
+    background: str,
+    heading: str,
+    body: str,
+    border: str,
+    button_bg: str,
+    button_text: str,
+    card_surface: str,
+) -> dict[str, str]:
+    """Derive primary and outline button colors from the theme palette."""
+    btn_hover = (
+        _blend_toward_white(button_bg, 0.14)
+        if _is_dark_theme(background)
+        else _blend_toward_black(button_bg, 0.18)
+    )
+
+    outline_text = heading
+    if _contrast_ratio_hex(outline_text, background) < 3.0:
+        outline_text = body
+    if _contrast_ratio_hex(outline_text, background) < 3.0:
+        outline_text = "#f4f4f4" if _is_dark_theme(background) else "#1e1e2e"
+
+    outline_hover_text = heading
+    if _contrast_ratio_hex(outline_hover_text, card_surface) < 3.0:
+        outline_hover_text = body
+    if _contrast_ratio_hex(outline_hover_text, card_surface) < 3.0:
+        outline_hover_text = outline_text
+
+    primary_hover_text = button_text
+    if _contrast_ratio_hex(primary_hover_text, btn_hover) < 3.0:
+        primary_hover_text = (
+            "#1e1e2e" if _relative_luminance(btn_hover) > 0.55 else "#ffffff"
+        )
+
+    return {
+        "btn_hover": btn_hover,
+        "btn_hover_text": primary_hover_text,
+        "outline_text": outline_text,
+        "outline_border": border,
+        "outline_hover_bg": card_surface,
+        "outline_hover_text": outline_hover_text,
+        "outline_hover_border": heading,
+    }
+
+
+def _portfolio_surface_colors(background: str, card: str, border: str) -> tuple[str, str, str]:
+    """On light backgrounds, lift cards/tags so content stays readable."""
+    if _is_dark_theme(background):
+        return card, _rgba(border, 0.25), border
+
+    surface = _blend_toward_white(card, 0.4)
+    if _relative_luminance(surface) - _relative_luminance(background) < 0.12:
+        surface = "#ffffff"
+    tag_bg = _blend_toward_white(border, 0.72)
+    tag_border = _blend_toward_white(border, 0.45)
+    return surface, tag_bg, tag_border
+
+
+def _format_education_year(edu: dict) -> str:
+    grad = (edu.get("grad_year") or edu.get("graduation_year") or "").strip()
+    if grad:
+        return grad
+    years = (edu.get("years") or edu.get("duration") or "").strip()
+    if not years:
+        return ""
+    if re.search(r"present", years, re.I):
+        return years
+    range_match = re.search(r"(\d{4})\s*[-–—]\s*(\d{4})", years)
+    if range_match:
+        return range_match.group(2)
+    found_years = re.findall(r"\b(\d{4})\b", years)
+    if found_years:
+        return found_years[-1]
+    return years
+
+
+def generate_portfolio_html(
+    profile: dict,
+    theme: dict | None = None,
+    font: str | None = None,
+) -> str:
     """
     Build a self-contained portfolio website from extracted resume profile data.
     Inspired by modern personal portfolio layouts with anchored sections and a hero landing.
     """
     raw_name = (profile.get("name") or "Your Name").strip()
     name = html.escape(raw_name)
-    role = html.escape((profile.get("role") or "").strip())
+    raw_role = (profile.get("role") or "").strip()
+    role = html.escape(raw_role)
     skills_summary = (profile.get("skills_summary") or "").strip()
+    tagline_raw = (profile.get("tagline") or "").strip()
+    about_raw = (profile.get("about") or "").strip()
     email = (profile.get("email") or "").strip()
     location = html.escape((profile.get("location") or "").strip())
     linkedin = (profile.get("linkedin") or "").strip()
@@ -201,30 +394,49 @@ def generate_portfolio_html(profile: dict) -> str:
     projects = profile.get("projects") or []
     experience = profile.get("experience") or []
     education = profile.get("education") or []
-    certifications = profile.get("certifications") or []
+    resume_id = (profile.get("resume_id") or "").strip()
+    has_resume = bool(re.fullmatch(r"[a-f0-9]{8}", resume_id))
 
-    name_parts = raw_name.split()
     display_name = name
-    if len(name_parts) >= 2:
-        display_name = (
-            f'<span class="name-accent">{html.escape(name_parts[0])}</span> '
-            f"{html.escape(' '.join(name_parts[1:]))}"
-        )
-
     initials = html.escape(raw_name[:1].upper() if raw_name else "?")
-    tagline = html.escape(skills_summary) if skills_summary else (
-        "Building thoughtful work, one project at a time." if not role
-        else f"Focused on {html.escape(role.lower())} and meaningful impact."
-    )
-    about_body = html.escape(skills_summary) if skills_summary else (
-        "A short professional summary will appear here once your resume is processed. "
-        "Upload a resume with an about section or skills summary to personalize this page."
-    )
 
-    def btn(href: str, label: str, external: bool = False) -> str:
-        safe_href = html.escape(href, quote=True)
-        extra = ' target="_blank" rel="noopener noreferrer"' if external else ""
-        return f'<a class="btn" href="{safe_href}"{extra}>{html.escape(label)}</a>'
+    if tagline_raw:
+        tagline = html.escape(tagline_raw)
+    elif raw_role:
+        tagline = html.escape(f"Focused on meaningful work as a {raw_role.lower()}.")
+    else:
+        tagline = "Building thoughtful work, one project at a time."
+
+    if about_raw:
+        about_body = html.escape(about_raw)
+    else:
+        about_parts = [f"I'm {name}"]
+        if raw_role:
+            about_parts.append(f", {role}")
+        if location:
+            about_parts.append(f", based in {location}")
+        about_parts.append(".")
+        if skills_summary:
+            about_parts.append(f" {skills_summary}")
+        about_body = html.escape("".join(about_parts).strip())
+
+    about_info_lines = []
+    for edu in education:
+        if isinstance(edu, str):
+            if edu.strip():
+                about_info_lines.append(html.escape(edu.strip()))
+        else:
+            degree = (edu.get("degree") or "").strip()
+            school = (edu.get("school") or "").strip()
+            grad_year = _format_education_year(edu)
+            line = " · ".join(x for x in [degree, school, grad_year] if x)
+            if line:
+                about_info_lines.append(html.escape(line))
+    about_info_html = ""
+    if about_info_lines:
+        about_info_html = '<div class="about-info">' + "".join(
+            f"<p>{line}</p>" for line in about_info_lines
+        ) + "</div>"
 
     # Collect distinct skills from projects and experience
     skill_map: dict[str, str] = {}
@@ -242,19 +454,15 @@ def generate_portfolio_html(profile: dict) -> str:
     has_skills = bool(skill_map)
     has_experience = bool(experience)
     has_projects = bool(projects)
-    has_education = bool(education)
-    has_certs = bool(certifications)
 
     nav_items: list[tuple[str, str]] = [("about", "About")]
     if has_skills:
         nav_items.append(("skills", "Skills"))
-    nav_items.append(("projects", "Projects"))
-    if has_certs:
-        nav_items.append(("certifications", "Certs"))
     if has_experience:
         nav_items.append(("experience", "Experience"))
-    if has_education:
-        nav_items.append(("education", "Education"))
+    nav_items.append(("projects", "Projects"))
+    if has_resume:
+        nav_items.append(("resume", "Resume"))
     nav_items.append(("contact", "Contact"))
 
     nav_html = "".join(
@@ -264,32 +472,15 @@ def generate_portfolio_html(profile: dict) -> str:
     hero_ctas = '<a class="btn btn-primary" href="#projects">View My Work</a>'
     hero_ctas += '<a class="btn btn-outline" href="#contact">Get In Touch</a>'
 
-    about_meta = ""
-    meta_bits = []
-    if location:
-        meta_bits.append(f'<span class="meta-pill">{location}</span>')
-    if email:
-        meta_bits.append(f'<span class="meta-pill">{html.escape(email)}</span>')
-    if role:
-        meta_bits.append(f'<span class="meta-pill">{role}</span>')
-    if meta_bits:
-        about_meta = f'<div class="meta-row">{"".join(meta_bits)}</div>'
-
-    section_num = 1
-
     def section_header(title: str, subtitle: str = "") -> str:
-        nonlocal section_num
-        num = f"{section_num:02d}"
-        section_num += 1
         sub = f'<p class="section-sub">{subtitle}</p>' if subtitle else ""
         return f"""
       <div class="section-head">
-        <span class="section-num">{num}</span>
         <h2 class="section-title">{title}</h2>
         {sub}
       </div>"""
 
-    about_header = section_header("About Me", "A quick introduction")
+    about_header = section_header("About Me")
 
     skills_section = ""
     if has_skills:
@@ -298,38 +489,9 @@ def generate_portfolio_html(profile: dict) -> str:
             for label in skill_map.values()
         )
         skills_section = f"""
-    <section id="skills" class="panel">
+    <section id="skills" class="panel reveal">
       {section_header("Skills &amp; Expertise", "Technologies and tools from your resume")}
       <div class="skill-cloud">{skill_tags}</div>
-    </section>"""
-
-    projects_section = ""
-    if has_projects:
-        project_cards = ""
-        for idx, project in enumerate(projects, start=1):
-            project_name = html.escape((project.get("name") or "Project").strip())
-            project_desc = html.escape((project.get("desc") or "").strip())
-            tech_tags = "".join(
-                f'<span class="tag">{html.escape(str(tag))}</span>'
-                for tag in (project.get("tech") or [])
-            )
-            project_cards += f"""
-        <article class="project-card">
-          <div class="project-index">Project · {idx:03d}</div>
-          <h3>{project_name}</h3>
-          <p>{project_desc}</p>
-          <div class="tags">{tech_tags}</div>
-        </article>"""
-        projects_section = f"""
-    <section id="projects" class="panel">
-      {section_header("Featured Projects", "Selected work from your resume")}
-      <div class="project-grid">{project_cards}</div>
-    </section>"""
-    else:
-        projects_section = f"""
-    <section id="projects" class="panel">
-      {section_header("Featured Projects")}
-      <p class="placeholder">Project highlights will appear here when they are listed on your resume.</p>
     </section>"""
 
     experience_section = ""
@@ -350,7 +512,7 @@ def generate_portfolio_html(profile: dict) -> str:
             )
             company_line = f" · {company}" if company else ""
             exp_items += f"""
-        <article class="timeline-item">
+        <article class="timeline-item reveal">
           <div class="timeline-when">{duration or "Present"}</div>
           <div class="timeline-body">
             <h3>{title}<span class="timeline-org">{company_line}</span></h3>
@@ -358,105 +520,116 @@ def generate_portfolio_html(profile: dict) -> str:
           </div>
         </article>"""
         experience_section = f"""
-    <section id="experience" class="panel">
-      {section_header("Work Experience", "Recent roles and impact")}
+    <section id="experience" class="panel reveal">
+      {section_header("Experience", "Recent roles and impact")}
       <div class="timeline">{exp_items}</div>
     </section>"""
 
-    certs_section = ""
-    if has_certs:
-        cert_cards = ""
-        for cert in certifications:
-            if isinstance(cert, str):
-                cert_name = html.escape(cert.strip())
-                cert_detail = ""
-            else:
-                cert_name = html.escape((cert.get("name") or cert.get("title") or "Certification").strip())
-                cert_detail = html.escape((cert.get("issuer") or cert.get("org") or "").strip())
-            detail_html = f"<p>{cert_detail}</p>" if cert_detail else ""
-            cert_cards += f"""
-        <article class="info-card">
-          <h3>{cert_name}</h3>
-          {detail_html}
+    projects_section = ""
+    if has_projects:
+        project_cards = ""
+        for project in projects:
+            project_name = html.escape((project.get("name") or "Project").strip())
+            project_desc = html.escape((project.get("desc") or "").strip())
+            tech_tags = "".join(
+                f'<span class="tag">{html.escape(str(tag))}</span>'
+                for tag in (project.get("tech") or [])
+            )
+            project_cards += f"""
+        <article class="project-card reveal">
+          <h3>{project_name}</h3>
+          <p>{project_desc}</p>
+          <div class="tags">{tech_tags}</div>
         </article>"""
-        certs_section = f"""
-    <section id="certifications" class="panel">
-      {section_header("Certifications")}
-      <div class="info-grid">{cert_cards}</div>
+        projects_section = f"""
+    <section id="projects" class="panel reveal">
+      {section_header("Projects", "Selected work from your resume")}
+      <div class="project-grid">{project_cards}</div>
+    </section>"""
+    else:
+        projects_section = f"""
+    <section id="projects" class="panel reveal">
+      {section_header("Projects")}
+      <p class="placeholder">Project highlights will appear here when they are listed on your resume.</p>
     </section>"""
 
-    education_section = ""
-    if has_education:
-        edu_cards = ""
-        for edu in education:
-            if isinstance(edu, str):
-                edu_title = html.escape(edu.strip())
-                edu_sub = ""
-            else:
-                edu_title = html.escape((edu.get("degree") or edu.get("school") or "Education").strip())
-                school = html.escape((edu.get("school") or "").strip())
-                years = html.escape((edu.get("years") or edu.get("duration") or "").strip())
-                edu_sub = " · ".join(x for x in [school, years] if x)
-            sub_html = f"<p>{edu_sub}</p>" if edu_sub else ""
-            edu_cards += f"""
-        <article class="info-card">
-          <h3>{edu_title}</h3>
-          {sub_html}
-        </article>"""
-        education_section = f"""
-    <section id="education" class="panel">
-      {section_header("Education")}
-      <div class="info-grid">{edu_cards}</div>
+    resume_section = ""
+    if has_resume:
+        safe_resume_id = html.escape(resume_id, quote=True)
+        resume_filename = html.escape(
+            f"{re.sub(r'[^a-zA-Z0-9_-]+', '_', raw_name).strip('_') or 'resume'}_Resume.pdf",
+            quote=True,
+        )
+        resume_section = f"""
+    <section id="resume" class="panel reveal">
+      {section_header("Resume", "Download a PDF copy of my resume")}
+      <div class="resume-download-wrap">
+        <a class="btn btn-primary resume-download" href="/api/resume/{safe_resume_id}" download="{resume_filename}">
+          Download Resume PDF
+        </a>
+      </div>
     </section>"""
 
-    contact_cards = ""
+    contact_lines = []
     if email:
         safe_email = html.escape(email, quote=True)
-        contact_cards += f"""
-        <div class="contact-card">
-          <span class="contact-label">Email</span>
-          <a href="mailto:{safe_email}">{html.escape(email)}</a>
-        </div>"""
+        contact_lines.append(
+            f'<p class="contact-line"><span class="contact-label">Email</span> '
+            f'<a href="mailto:{safe_email}">{html.escape(email)}</a></p>'
+        )
     if location:
-        contact_cards += f"""
-        <div class="contact-card">
-          <span class="contact-label">Location</span>
-          <span>{location}</span>
-        </div>"""
+        contact_lines.append(
+            f'<p class="contact-line"><span class="contact-label">Location</span> '
+            f'<span class="contact-value">{location}</span></p>'
+        )
     if linkedin:
         safe_linkedin = html.escape(linkedin, quote=True)
-        contact_cards += f"""
-        <div class="contact-card">
-          <span class="contact-label">LinkedIn</span>
-          <a href="{safe_linkedin}" target="_blank" rel="noopener noreferrer">View profile</a>
-        </div>"""
+        contact_lines.append(
+            f'<p class="contact-line"><span class="contact-label">LinkedIn</span> '
+            f'<a href="{safe_linkedin}" target="_blank" rel="noopener noreferrer">{html.escape(linkedin)}</a></p>'
+        )
     if github:
         safe_github = html.escape(github, quote=True)
-        contact_cards += f"""
-        <div class="contact-card">
-          <span class="contact-label">GitHub</span>
-          <a href="{safe_github}" target="_blank" rel="noopener noreferrer">View profile</a>
-        </div>"""
-
-    contact_actions = ""
-    if email:
-        contact_actions += btn(f"mailto:{email}", "Say Hello")
-    elif linkedin:
-        contact_actions += btn(linkedin, "Say Hello", external=True)
-    elif github:
-        contact_actions += btn(github, "Say Hello", external=True)
+        contact_lines.append(
+            f'<p class="contact-line"><span class="contact-label">GitHub</span> '
+            f'<a href="{safe_github}" target="_blank" rel="noopener noreferrer">{html.escape(github)}</a></p>'
+        )
 
     contact_body = (
-        contact_cards
-        if contact_cards
+        "".join(contact_lines)
+        if contact_lines
         else '<p class="placeholder">Add email, LinkedIn, or GitHub to your resume to populate contact details.</p>'
     )
+
+    colors = _adjust_theme_contrast(_resolve_portfolio_theme(theme))
+    c_bg = colors["background"]
+    c_heading = colors["heading_color"]
+    c_card = colors["card_bg"]
+    c_border = colors["card_border"]
+    c_text = colors["body_text"]
+    c_btn = colors["button_bg"]
+    c_btn_text = colors["button_text"]
+    c_accent = _accent_color(c_btn, c_heading, c_text, c_bg)
+    c_font = (font or DEFAULT_PORTFOLIO_FONT).replace("<", "").replace("}", "")
+    border_r, border_g, border_b = _hex_to_rgb(c_border)
+    heading_r, heading_g, heading_b = _hex_to_rgb(c_heading)
+    c_card_surface, c_tag_bg, c_tag_border_line = _portfolio_surface_colors(c_bg, c_card, c_border)
+    btn_palette = _palette_button_colors(
+        c_bg, c_heading, c_text, c_border, c_btn, c_btn_text, c_card_surface
+    )
+    c_btn_hover = btn_palette["btn_hover"]
+    c_btn_hover_text = btn_palette["btn_hover_text"]
+    c_outline_text = btn_palette["outline_text"]
+    c_outline_border = btn_palette["outline_border"]
+    c_outline_hover_bg = btn_palette["outline_hover_bg"]
+    c_outline_hover_text = btn_palette["outline_hover_text"]
+    c_outline_hover_border = btn_palette["outline_hover_border"]
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>{name} — Portfolio</title>
   <style>
     * {{
@@ -465,17 +638,50 @@ def generate_portfolio_html(profile: dict) -> str:
       padding: 0;
     }}
     html {{
+      font-size: 16px;
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
       scroll-behavior: smooth;
       scroll-padding-top: 4.5rem;
     }}
+    @keyframes fade-up {{
+      from {{
+        opacity: 0;
+        transform: translateY(28px);
+      }}
+      to {{
+        opacity: 1;
+        transform: translateY(0);
+      }}
+    }}
+    @keyframes fade-in {{
+      from {{ opacity: 0; }}
+      to {{ opacity: 1; }}
+    }}
     body {{
-      background: #f0ece6;
-      color: #2e2a3d;
-      font-family: Georgia, "Times New Roman", serif;
+      background: {c_bg};
+      color: {c_text};
+      font-family: {c_font};
+      font-size: 1rem;
       line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }}
+    #bg-canvas {{
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }}
+    .site-nav,
+    .hero,
+    .page-wrap,
+    .site-footer {{
+      position: relative;
+      z-index: 1;
     }}
     a {{
-      color: #4f4d84;
+      color: {c_accent};
     }}
     .site-nav {{
       position: sticky;
@@ -486,16 +692,16 @@ def generate_portfolio_html(profile: dict) -> str:
       justify-content: space-between;
       gap: 1rem;
       padding: 0.85rem 1.25rem;
-      background: rgba(240, 236, 230, 0.92);
-      border-bottom: 1px solid rgba(170, 171, 202, 0.65);
+      background: {_rgba(c_bg, 0.88)};
       backdrop-filter: blur(8px);
+      animation: fade-in 0.6s ease-out both;
     }}
     .brand {{
       display: flex;
       align-items: center;
       gap: 0.65rem;
       text-decoration: none;
-      color: #2e2a3d;
+      color: {c_text};
       font-weight: 700;
       white-space: nowrap;
     }}
@@ -503,8 +709,8 @@ def generate_portfolio_html(profile: dict) -> str:
       width: 2rem;
       height: 2rem;
       border-radius: 999px;
-      background: #6c6c9b;
-      color: #fff;
+      background: {c_btn};
+      color: {c_btn_text};
       display: grid;
       place-items: center;
       font-size: 0.85rem;
@@ -518,29 +724,49 @@ def generate_portfolio_html(profile: dict) -> str:
     }}
     .nav-links a {{
       text-decoration: none;
-      color: #4f4d84;
+      color: {c_accent};
       font-size: 0.88rem;
       font-weight: 600;
     }}
     .nav-links a:hover {{
-      color: #a47864;
+      color: {c_heading};
     }}
     .hero {{
+      position: relative;
       min-height: calc(100vh - 4.5rem);
       display: grid;
       place-items: center;
       padding: 3rem 1.25rem 4rem;
       text-align: center;
-      background:
-        radial-gradient(circle at top right, rgba(170, 171, 202, 0.22), transparent 42%),
-        radial-gradient(circle at bottom left, rgba(164, 120, 100, 0.14), transparent 38%),
-        #f0ece6;
+      background: transparent;
+    }}
+    .hero::before {{
+      content: "";
+      position: absolute;
+      inset: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100vw;
+      z-index: -1;
+      background: {_rgba(c_card, 0.55)};
     }}
     .hero-inner {{
       max-width: 46rem;
     }}
+    .hero-inner .eyebrow {{
+      animation: fade-up 0.85s ease-out both;
+    }}
+    .hero-inner h1 {{
+      animation: fade-up 0.85s ease-out 0.12s both;
+    }}
+    .hero-inner .hero-tagline {{
+      animation: fade-up 0.85s ease-out 0.24s both;
+    }}
+    .hero-inner .hero-actions {{
+      animation: fade-up 0.85s ease-out 0.36s both;
+    }}
     .eyebrow {{
-      color: #6c6c9b;
+      color: {c_accent};
       font-size: 0.95rem;
       letter-spacing: 0.08em;
       text-transform: uppercase;
@@ -548,23 +774,18 @@ def generate_portfolio_html(profile: dict) -> str:
       font-weight: 700;
     }}
     .hero h1 {{
-      color: #a47864;
+      color: {c_heading};
       font-size: clamp(2.5rem, 8vw, 4.5rem);
       line-height: 1.05;
       font-weight: 700;
       margin-bottom: 1rem;
       letter-spacing: -0.03em;
     }}
-    .name-accent {{
-      text-decoration: underline;
-      text-decoration-color: rgba(164, 120, 100, 0.45);
-      text-underline-offset: 0.18em;
-    }}
     .hero-tagline {{
       font-size: clamp(1.05rem, 2.5vw, 1.35rem);
       max-width: 38rem;
       margin: 0 auto 1.75rem;
-      color: #2e2a3d;
+      color: {c_text};
       opacity: 0.92;
     }}
     .hero-actions {{
@@ -579,52 +800,64 @@ def generate_portfolio_html(profile: dict) -> str:
       padding: 0 1.25rem 4rem;
     }}
     .panel {{
-      padding: 4.5rem 0 0;
-      border-top: 1px solid rgba(170, 171, 202, 0.45);
+      position: relative;
+      padding: 5rem 0 4rem;
+      margin-bottom: 0;
+    }}
+    .panel::before {{
+      content: "";
+      position: absolute;
+      inset: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100vw;
+      z-index: -1;
+    }}
+    .panel:nth-of-type(odd)::before {{
+      background: {_rgba(c_card, 0.82)};
+    }}
+    .panel:nth-of-type(even)::before {{
+      background: {_rgba(c_border, 0.16)};
     }}
     .panel:first-of-type {{
-      border-top: none;
-      padding-top: 3rem;
+      padding-top: 3.5rem;
+    }}
+    .reveal {{
+      opacity: 0;
+      transform: translateY(22px);
+      transition: opacity 0.65s ease, transform 0.65s ease;
+    }}
+    .reveal.visible {{
+      opacity: 1;
+      transform: translateY(0);
     }}
     .section-head {{
-      margin-bottom: 2rem;
-    }}
-    .section-num {{
-      display: inline-block;
-      color: #6c6c9b;
-      font-size: 0.8rem;
-      font-weight: 700;
-      letter-spacing: 0.12em;
-      margin-bottom: 0.5rem;
+      margin-bottom: 1.75rem;
     }}
     .section-title {{
-      color: #a47864;
+      color: {c_heading};
       font-size: clamp(1.6rem, 4vw, 2.2rem);
       font-weight: 700;
       margin-bottom: 0.35rem;
     }}
     .section-sub {{
-      color: #4f4d84;
+      color: {c_accent};
       font-size: 0.98rem;
       opacity: 0.9;
     }}
     .about-copy {{
       font-size: 1.05rem;
       max-width: 42rem;
-      margin-bottom: 1.5rem;
+      margin-bottom: 1.25rem;
     }}
-    .meta-row {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.55rem;
+    .about-info {{
+      max-width: 42rem;
+      margin-top: 0.5rem;
     }}
-    .meta-pill {{
-      background: #ffffff;
-      border: 1px solid #aaabca;
-      border-radius: 999px;
-      padding: 0.35rem 0.8rem;
-      font-size: 0.82rem;
-      color: #2e2a3d;
+    .about-info p {{
+      font-size: 0.95rem;
+      color: {c_accent};
+      margin-bottom: 0.35rem;
     }}
     .skill-cloud,
     .tags {{
@@ -633,12 +866,17 @@ def generate_portfolio_html(profile: dict) -> str:
       gap: 0.55rem;
     }}
     .tag {{
-      background: rgba(170, 171, 202, 0.25);
-      color: #2e2a3d;
+      background: {c_tag_bg};
+      color: {c_text};
       font-size: 0.8rem;
       padding: 0.35rem 0.75rem;
       border-radius: 999px;
-      border: 1px solid rgba(170, 171, 202, 0.45);
+      border: 1px solid {c_tag_border_line};
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }}
+    .tag:hover {{
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px {_rgba(c_text, 0.08)};
     }}
     .project-grid {{
       display: grid;
@@ -647,29 +885,21 @@ def generate_portfolio_html(profile: dict) -> str:
     }}
     .project-card,
     .info-card {{
-      background: #ffffff;
-      border: 1px solid #aaabca;
+      background: {c_card_surface};
+      border: 1px solid {c_border};
       border-radius: 1rem;
       padding: 1.35rem;
-      box-shadow: 0 8px 24px rgba(46, 42, 61, 0.05);
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      box-shadow: 0 8px 24px {_rgba(c_text, 0.05)};
+      transition: transform 0.25s ease, box-shadow 0.25s ease;
     }}
     .project-card:hover {{
       transform: translateY(-2px);
-      box-shadow: 0 12px 28px rgba(46, 42, 61, 0.08);
-    }}
-    .project-index {{
-      color: #6c6c9b;
-      font-size: 0.75rem;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      margin-bottom: 0.65rem;
-      font-weight: 700;
+      box-shadow: 0 12px 28px {_rgba(c_text, 0.08)};
     }}
     .project-card h3,
     .info-card h3,
     .timeline-body h3 {{
-      color: #a47864;
+      color: {c_heading};
       font-size: 1.08rem;
       margin-bottom: 0.55rem;
       font-weight: 700;
@@ -685,23 +915,29 @@ def generate_portfolio_html(profile: dict) -> str:
     }}
     .timeline-item {{
       display: grid;
-      grid-template-columns: minmax(7.5rem, 10rem) 1fr;
+      grid-template-columns: minmax(9rem, 12rem) 1fr;
       gap: 1rem;
-      background: #ffffff;
-      border: 1px solid #aaabca;
+      background: {c_card_surface};
+      border: 1px solid {c_border};
       border-radius: 1rem;
       padding: 1.25rem 1.35rem;
-      box-shadow: 0 6px 18px rgba(46, 42, 61, 0.04);
+      box-shadow: 0 6px 18px {_rgba(c_text, 0.04)};
+      transition: transform 0.25s ease, box-shadow 0.25s ease;
+    }}
+    .timeline-item:hover {{
+      transform: translateY(-2px);
+      box-shadow: 0 10px 24px {_rgba(c_text, 0.07)};
     }}
     .timeline-when {{
-      color: #6c6c9b;
-      font-size: 0.82rem;
+      color: {c_heading};
+      font-size: 1.08rem;
       font-weight: 700;
-      letter-spacing: 0.03em;
-      padding-top: 0.15rem;
+      letter-spacing: 0.01em;
+      line-height: 1.35;
+      padding-top: 0.1rem;
     }}
     .timeline-org {{
-      color: #2e2a3d;
+      color: {c_text};
       font-weight: 600;
       opacity: 0.85;
     }}
@@ -712,54 +948,66 @@ def generate_portfolio_html(profile: dict) -> str:
     .timeline-body li {{
       margin-bottom: 0.35rem;
     }}
-    .info-grid {{
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 1rem;
-    }}
     .contact-panel {{
       text-align: center;
-      padding-bottom: 1rem;
+      padding-bottom: 2rem;
+    }}
+    .resume-download-wrap {{
+      display: flex;
+      justify-content: center;
+      margin-top: 0.5rem;
+    }}
+    .resume-download {{
+      min-width: 12rem;
+      text-align: center;
     }}
     .contact-panel .section-head {{
       text-align: center;
+      margin-bottom: 2rem;
     }}
-    .contact-grid {{
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 0.85rem;
-      margin: 1.5rem auto 1.75rem;
-      max-width: 42rem;
-      text-align: left;
+    .contact-wrap {{
+      max-width: 28rem;
+      margin: 0 auto;
     }}
-    .contact-card {{
-      background: #ffffff;
-      border: 1px solid #aaabca;
-      border-radius: 0.9rem;
-      padding: 1rem 1.1rem;
+    .contact-list {{
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+      padding: 2rem 2.25rem;
+      background: {c_card_surface};
+      border: 1px solid {c_border};
+      border-radius: 1.25rem;
+      box-shadow: 0 10px 32px {_rgba(c_text, 0.06)};
+    }}
+    .contact-line {{
+      font-size: 0.98rem;
+      margin-bottom: 0;
+      word-break: break-word;
+      text-align: center;
+      width: 100%;
+    }}
+    .contact-line a,
+    .contact-value {{
+      color: {c_text};
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.98rem;
+    }}
+    .contact-line a:hover {{
+      color: {c_heading};
     }}
     .contact-label {{
       display: block;
-      color: #6c6c9b;
-      font-size: 0.75rem;
+      min-width: auto;
+      color: {c_btn};
+      font-size: 0.72rem;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      margin-bottom: 0.35rem;
       font-weight: 700;
-    }}
-    .contact-card a {{
-      color: #2e2a3d;
-      text-decoration: none;
-      font-weight: 600;
-    }}
-    .contact-card a:hover {{
-      color: #a47864;
-    }}
-    .contact-actions {{
-      display: flex;
-      justify-content: center;
-      gap: 0.75rem;
-      flex-wrap: wrap;
+      margin-right: 0;
+      margin-bottom: 0.35rem;
     }}
     .btn {{
       display: inline-block;
@@ -771,23 +1019,24 @@ def generate_portfolio_html(profile: dict) -> str:
       transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
     }}
     .btn-primary {{
-      background: #6c6c9b;
-      color: #ffffff;
-      border: 1px solid #6c6c9b;
+      background: {c_btn};
+      color: {c_btn_text};
+      border: 1px solid {c_btn};
     }}
     .btn-primary:hover {{
-      background: #4f4d84;
-      border-color: #4f4d84;
+      background: {c_btn_hover};
+      border-color: {c_btn_hover};
+      color: {c_btn_hover_text};
     }}
     .btn-outline {{
       background: transparent;
-      color: #4f4d84;
-      border: 1px solid #aaabca;
+      color: {c_outline_text};
+      border: 1px solid {c_outline_border};
     }}
     .btn-outline:hover {{
-      background: #ffffff;
-      color: #a47864;
-      border-color: #a47864;
+      background: {c_outline_hover_bg};
+      color: {c_outline_hover_text};
+      border-color: {c_outline_hover_border};
     }}
     .placeholder {{
       opacity: 0.75;
@@ -795,11 +1044,22 @@ def generate_portfolio_html(profile: dict) -> str:
       max-width: 36rem;
     }}
     .site-footer {{
-      border-top: 1px solid rgba(170, 171, 202, 0.45);
+      position: relative;
+      z-index: 1;
       padding: 1.5rem 1.25rem 2rem;
       text-align: center;
-      color: #4f4d84;
+      color: {c_accent};
       font-size: 0.85rem;
+    }}
+    .site-footer::before {{
+      content: "";
+      position: absolute;
+      inset: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100vw;
+      z-index: -1;
+      background: {_rgba(c_card, 0.72)};
     }}
     @media (max-width: 720px) {{
       .site-nav {{
@@ -820,6 +1080,7 @@ def generate_portfolio_html(profile: dict) -> str:
   </style>
 </head>
 <body>
+  <canvas id="bg-canvas" aria-hidden="true"></canvas>
   <nav class="site-nav">
     <a class="brand" href="#top">
       <span class="brand-mark">{initials}</span>
@@ -838,26 +1099,156 @@ def generate_portfolio_html(profile: dict) -> str:
   </header>
 
   <main class="page-wrap">
-    <section id="about" class="panel">
+    <section id="about" class="panel reveal">
       {about_header}
       <p class="about-copy">{about_body}</p>
-      {about_meta}
+      {about_info_html}
     </section>
     {skills_section}
-    {projects_section}
-    {certs_section}
     {experience_section}
-    {education_section}
-    <section id="contact" class="panel contact-panel">
-      {section_header("Let&apos;s Connect", "Open to conversations, collaborations, and new opportunities")}
-      <div class="contact-grid">{contact_body}</div>
-      <div class="contact-actions">{contact_actions}</div>
+    {projects_section}
+    {resume_section}
+    <section id="contact" class="panel contact-panel reveal">
+      <div class="contact-wrap">
+        {section_header("Contact")}
+        <div class="contact-list">{contact_body}</div>
+      </div>
     </section>
   </main>
 
   <footer class="site-footer">
     <p>&copy; 2026 {name}. Built with Cue.</p>
   </footer>
+  <script>
+  (function () {{
+    const canvas = document.getElementById("bg-canvas");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const sand = "{c_bg}";
+    const sage = "{c_border}";
+    const olive = "{c_heading}";
+    const config = {{
+      areaPerParticle: 12000,
+      minCount: 50,
+      maxCount: 90,
+      linkDist: 158,
+      maxLinks: 5,
+      lineOpacity: 0.22,
+      nodeOpacity: 0.65,
+      speed: 0.14,
+      margin: 24,
+    }};
+    let particles = [];
+    let animationId;
+
+    function resize() {{
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = window.innerWidth * dpr;
+      canvas.height = window.innerHeight * dpr;
+      canvas.style.width = window.innerWidth + "px";
+      canvas.style.height = window.innerHeight + "px";
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }}
+
+    function init() {{
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const n = Math.max(
+        config.minCount,
+        Math.min(config.maxCount, Math.floor((w * h) / config.areaPerParticle))
+      );
+      particles = Array.from({{ length: n }}, () => ({{
+        x: config.margin + Math.random() * (w - config.margin * 2),
+        y: config.margin + Math.random() * (h - config.margin * 2),
+        vx: (Math.random() - 0.5) * config.speed,
+        vy: (Math.random() - 0.5) * config.speed,
+        r: 1.2 + Math.random() * 1.4,
+      }}));
+    }}
+
+    function move(p, w, h) {{
+      p.x += p.vx;
+      p.y += p.vy;
+      if (p.x < config.margin || p.x > w - config.margin) {{
+        p.vx *= -1;
+        p.x = Math.max(config.margin, Math.min(w - config.margin, p.x));
+      }}
+      if (p.y < config.margin || p.y > h - config.margin) {{
+        p.vy *= -1;
+        p.y = Math.max(config.margin, Math.min(h - config.margin, p.y));
+      }}
+    }}
+
+    function linksFor(i) {{
+      const a = particles[i];
+      const found = [];
+      for (let j = 0; j < particles.length; j++) {{
+        if (j === i) continue;
+        const b = particles[j];
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (d < config.linkDist) found.push({{ j, d }});
+      }}
+      found.sort((x, y) => x.d - y.d);
+      return found.slice(0, config.maxLinks);
+    }}
+
+    function draw() {{
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      ctx.fillStyle = sand;
+      ctx.fillRect(0, 0, w, h);
+      for (const p of particles) move(p, w, h);
+      const drawn = new Set();
+      ctx.lineCap = "round";
+      for (let i = 0; i < particles.length; i++) {{
+        const a = particles[i];
+        for (const {{ j, d }} of linksFor(i)) {{
+          const key = i < j ? i + "-" + j : j + "-" + i;
+          if (drawn.has(key)) continue;
+          drawn.add(key);
+          const b = particles[j];
+          const alpha = (1 - d / config.linkDist) * config.lineOpacity;
+          ctx.strokeStyle = "rgba({border_r}, {border_g}, {border_b}, " + alpha + ")";
+          ctx.lineWidth = 0.8;
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }}
+      }}
+      for (const p of particles) {{
+        ctx.fillStyle = "rgba({heading_r}, {heading_g}, {heading_b}, " + config.nodeOpacity + ")";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }}
+      animationId = requestAnimationFrame(draw);
+    }}
+
+    function onResize() {{
+      resize();
+      init();
+    }}
+
+    resize();
+    init();
+    animationId = requestAnimationFrame(draw);
+    window.addEventListener("resize", onResize);
+
+    document.querySelectorAll(".reveal").forEach((el, i) => {{
+      el.style.setProperty("--i", String(i % 6));
+    }});
+    const revealObserver = new IntersectionObserver((entries) => {{
+      entries.forEach((entry) => {{
+        if (entry.isIntersecting) {{
+          entry.target.classList.add("visible");
+          revealObserver.unobserve(entry.target);
+        }}
+      }});
+    }}, {{ threshold: 0.12, rootMargin: "0px 0px -40px 0px" }});
+    document.querySelectorAll(".reveal").forEach((el) => revealObserver.observe(el));
+  }})();
+  </script>
 </body>
 </html>"""
 
@@ -1001,7 +1392,7 @@ def extract_profile_from_resume(resume_text: str) -> dict:
     """
     response = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=1024,
+        max_tokens=1536,
         messages=[
             {
                 "role": "user",
@@ -1012,8 +1403,17 @@ Return ONLY valid JSON with this exact structure, no markdown backticks, no expl
 {{
   "name": "full name",
   "role": "current role or status, e.g. CS student at ASU or Software Engineer at Company",
+  "tagline": "short punchy hero hook, max 15 words, inspirational and distinct from the about paragraph",
+  "about": "2 to 3 sentence personal introduction with name, major or field, school or background, and what they are working toward",
   "email": "email address if visible in the resume, otherwise empty string",
   "location": "city and state if visible, otherwise empty string",
+  "education": [
+    {{
+      "degree": "degree and major, e.g. B.S. in Computer Science",
+      "school": "university or school name",
+      "grad_year": "2026"
+    }}
+  ],
   "experience": [
     {{
       "title": "job title",
@@ -1036,6 +1436,12 @@ Return ONLY valid JSON with this exact structure, no markdown backticks, no expl
   "linkedin": "full LinkedIn profile URL starting with https://, or empty string",
   "github": "full GitHub profile URL starting with https://github.com/username only (not a repo URL), or empty string"
 }}
+
+Rules for tagline and about:
+- tagline is a short hero hook, not the same text as about or skills_summary
+- about is a fuller personal introduction covering background, major or field, and goals
+- Extract education entries when visible on the resume, otherwise return an empty array
+- For education, set grad_year to the graduation year only (e.g. 2026). Do not include a start year unless both start and end years are explicitly stated on the resume
 
 Rules for experience:
 - Extract up to 3 of the most recent or most significant work experience entries

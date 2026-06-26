@@ -1,5 +1,7 @@
 backend/.env
 backend/venv/
+backend/portfolios/
+backend/resumes/
 __pycache__/
 *.pyc
 .DS_Store
