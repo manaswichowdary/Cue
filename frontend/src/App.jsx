@@ -834,7 +834,7 @@ export default function App() {
                         Searching the web for {name}...
                       </p>
                       <p className="text-xs mt-1" style={{ color: palette.indigo }}>
-                        This takes about 15 seconds
+                        This takes about 45 seconds
                       </p>
                     </div>
                   )}
